@@ -36,7 +36,7 @@ var PORTAIL_CONFIG = {
           type: 'lien',
           url: 'https://script.google.com/macros/s/AKfycbybpUlEFv5QXIk4iHkDgwkcRenaJTWH48IH2XUXdxbWtQeh0mntNLlUf_YOjANeGtBc/exec'
         },
-        { id: 'bougies',   nom: 'Suivi Bougies',     description: 'Bougies du moteur de cogénération', icone: 'bougie',    type: 'lien', url: 'https://script.google.com/macros/s/AKfycbzmfVIauNzEocSeGDPt7qvDt0OAQo7o-uNSpuqU6yVPsKVk0IGVYUUXUyOatnSD1MOD/exec' },
+        { id: 'bougies',   nom: 'Suivi Bougies',     description: 'Tension des 12 bougies du moteur de cogénération', icone: 'bougie', type: 'interne', module: 'bougies' },
         { id: 'agitation', nom: 'Hauteur agitation', description: 'Suivi hauteur des agitateurs',      icone: 'agitation', type: 'lien', url: 'https://script.google.com/macros/s/AKfycbyFfo3Zi9Fa4mtEk7ZcwS6kP_9kD-PEJ_80l8PsMflwNk5yj_mh5e4RjnieBIf68Jbn/exec' }
       ]
     },

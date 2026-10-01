@@ -1,11 +1,22 @@
 /* Service worker : garde l'appli sur le téléphone -> ouverture instantanée, même sans réseau.
    Pour publier une mise à jour : changer le numéro de VERSION ci-dessous. */
-var VERSION = 'portail-metha-v7';
-var FICHIERS = ['./', 'index.html', 'styles.css', 'config.js', 'app.js', 'rondes.js', 'nh3.js', 'icons/logo-prodeval.png',
+var VERSION = 'portail-metha-v8';
+var FICHIERS = ['./', 'index.html', 'styles.css', 'config.js', 'app.js', 'rondes.js', 'nh3.js', 'bougies.js', 'icons/logo-prodeval.png',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
+// Fichiers indispensables : s'il en manque un, la mise à jour attend. Les images peuvent manquer sans tout bloquer.
+var ESSENTIELS = ['./', 'index.html', 'styles.css', 'config.js', 'app.js'];
 self.addEventListener('install', function (e) {
-  e.waitUntil(caches.open(VERSION).then(function (c) { return c.addAll(FICHIERS); }).then(function () { return self.skipWaiting(); }));
+  e.waitUntil(caches.open(VERSION).then(function (c) {
+    return Promise.all(FICHIERS.map(function (f) {
+      // cache: 'reload' -> toujours la version fraîche de GitHub (pas un mélange ancien / nouveau)
+      var p = fetch(new Request(f, { cache: 'reload' })).then(function (r) {
+        if (!r.ok) throw new Error(f + ' : ' + r.status);
+        return c.put(f, r);
+      });
+      return ESSENTIELS.indexOf(f) >= 0 ? p : p['catch'](function () {});
+    }));
+  }).then(function () { return self.skipWaiting(); }));
 });
 self.addEventListener('activate', function (e) {
   e.waitUntil(caches.keys().then(function (cles) {
