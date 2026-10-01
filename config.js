@@ -56,9 +56,7 @@ var PORTAIL_CONFIG = {
           type: 'lien',
           url: 'https://docs.google.com/forms/d/1_xC0e7xDNlrgE_1ww5FNLta0KF4CEoR1YNwzTqzgJMQ/viewform'
         },
-        { id: 'pt100',       nom: 'Températures PT100',   description: 'Sondes ESP32 des digesteurs',        icone: 'thermo',      type: 'lien', url: '' },
-        { id: 'nh3',         nom: 'Suivi NH3',            description: 'Analyses NH3 et charbon actif',      icone: 'filtre',      type: 'interne', module: 'nh3' },
-        { id: 'ppr',         nom: 'Plan de Prévention',   description: 'PPR entreprises extérieures',        icone: 'document',    type: 'lien', url: '' },
+        { id: 'nh3',         nom: 'Suivi NH3',            description: 'Analyses NH3 et charbon actif',      icone: 'filtre',      type: 'interne', module: 'nh3' }
         { id: 'analyses-arr',nom: 'Analyses digestat',    description: 'Résultats Novatech AOV / TAC / MS',  icone: 'analyse',     type: 'lien', url: 'https://script.google.com/macros/s/AKfycbybpUlEFv5QXIk4iHkDgwkcRenaJTWH48IH2XUXdxbWtQeh0mntNLlUf_YOjANeGtBc/exec' }
       ]
     }
