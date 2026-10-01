@@ -1,38 +1,64 @@
 /* =====================================================================
-   MODULE « RONDES JOURNALIÈRES » — version rapide
-   - les points de contrôle sont gardés sur le téléphone -> affichage immédiat
-   - la ronde en cours est sauvegardée en continu (rien n'est perdu si on ferme)
-   - chaque zone validée part dans la file d'envoi (fonctionne sans réseau)
+   MODULE « RONDE JOURNALIÈRE » — Métha de la Rotte — version rapide
+   Même déroulé que l'appli d'origine :
+   - un point de contrôle à la fois, réponse = passage au point suivant ;
+   - « Précédent » pour corriger (une réponse déjà envoyée est remplacée) ;
+   - notes entre parenthèses cliquables, photos de référence, bandeau
+     « Dernière fois : … » si le point était en alerte au dernier passage ;
+   - photos multiples, bip + vibration, « Merci … pour la ronde ! » ;
+   - envoi groupé par zone, reprise de la ronde du jour, sans réseau ;
+   - onglets Tableau de bord et Messagerie.
    ===================================================================== */
 (function () {
   'use strict';
   var PM = window.PM, el = PM.el;
 
-  /* Points de démonstration : utilisés tant que l'URL du serveur n'est pas renseignée */
+  /* Points de démonstration : utilisés tant que le serveur n'est pas réglé */
   var DEMO = {
     nomSite: 'Métha de la Rotte (démo)',
     derniereRonde: { date: '01/10/2026 09:11', agent: 'Mathieu', duree: 272 },
     agents: ['Mathieu', 'Charles', 'Thibaut'],
     points: [
-      { zone: 'Supervision', libelle: 'Contrôle courbe production J-1', reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photo: '' },
-      { zone: 'Supervision', libelle: 'Contrôle température cylindre A et B (pas de pic haut ou bas après un zoom des courbes)', reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photo: '' },
-      { zone: 'Supervision', libelle: 'Contrôle des alarmes', reponses: ['Absence de défaut', 'Présence de défaut réparation effectuée', 'Présence de défaut réparation différée'], reponsesAlerte: ['Présence de défaut réparation effectuée', 'Présence de défaut réparation différée'], photo: '' },
-      { zone: 'Supervision', libelle: 'Contrôle T° cuves (45°)', reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photo: '' },
-      { zone: 'Supervision', libelle: 'Contrôle valeurs gaz avant charbon (CH4 50-54%) (O2 0,6%) (H2S réagir au-dessus de 250 ppm)', reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photo: '' },
-      { zone: 'Incorporation', libelle: 'Contrôle usure vis verticale', reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photo: '' },
-      { zone: 'Incorporation', libelle: 'Chargement', reponses: ['Effectué', 'Reporté'], reponsesAlerte: ['Reporté'], photo: '' },
-      { zone: 'Incorporation', libelle: 'Nettoyage des fonds poussant', reponses: ['Effectué', 'Reporté'], reponsesAlerte: ['Reporté'], photo: '' },
-      { zone: 'Incorporation', libelle: 'Contrôle propreté cible + position capteur', reponses: ['Propre', 'À nettoyer'], reponsesAlerte: ['À nettoyer'], photo: '' },
-      { zone: 'Salle des pompes', libelle: 'Pression/Niveau pompe lobes', reponses: ['Conforme', 'Appoint d\'huile'], reponsesAlerte: ['Appoint d\'huile'], photo: '' },
-      { zone: 'Salle des pompes', libelle: 'Contrôle niveau Wangen recirculation', reponses: ['Conforme', 'Appoint d\'huile'], reponsesAlerte: ['Appoint d\'huile'], photo: '' },
-      { zone: 'Premix', libelle: 'Lavage zone prémix', reponses: ['Effectué', 'Reporté'], reponsesAlerte: ['Reporté'], photo: '' }
+      { zone: 'Supervision', libelle: 'Contrôle courbe production J-1', notes: [], reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photos: [] },
+      { zone: 'Supervision', libelle: 'Contrôle des alarmes', notes: [], reponses: ['Absence de défaut', 'Présence de défaut réparation effectuée', 'Présence de défaut réparation différée'], reponsesAlerte: ['Présence de défaut réparation effectuée', 'Présence de défaut réparation différée'], photos: [] },
+      { zone: 'Supervision', libelle: 'Contrôle T° cuves', notes: ['45°'], reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photos: [], derniereAlerte: true, derniereReponseAlerte: 'Non conforme' },
+      { zone: 'Supervision', libelle: 'Contrôle valeurs gaz avant charbon', notes: ['CH4 50-54%', 'O2 0,6%', 'H2S réagir si la valeur est au dessus de 250 ppm'], reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photos: [] },
+      { zone: 'Incorporation', libelle: 'Contrôle usure vis verticale', notes: [], reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photos: [] },
+      { zone: 'Incorporation', libelle: 'Nettoyage des fonds poussant', notes: [], reponses: ['Effectué', 'Reporté'], reponsesAlerte: ['Reporté'], photos: [], derniereAlerte: true, derniereReponseAlerte: 'Reporté' }
     ]
   };
 
-  function cleDuPoint(p) { return p.zone + ' || ' + p.libelle; }
-  function maintenantIso() { return new Date().toISOString(); }
+  function jourCourant() { return new Date().toDateString(); }
+  function cleDuPoint(p) { return p.zone + '||' + p.libelle; }
 
-  /* Réduit une photo avant envoi (1280 px, JPEG) : ~200 Ko au lieu de 4 Mo */
+  /* Bip + vibration à chaque réponse (comme l'original) */
+  var audio = null;
+  function debloquerAudio() {
+    try {
+      if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+      if (audio.state === 'suspended') audio.resume();
+    } catch (e) {}
+  }
+  function vibrerEtBip() {
+    if (navigator.vibrate) navigator.vibrate(150);
+    try {
+      if (!audio) return;
+      var o = audio.createOscillator(), g = audio.createGain();
+      o.type = 'sine'; o.frequency.value = 880;
+      g.gain.setValueAtTime(0.15, audio.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.15);
+      o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.15);
+    } catch (e) {}
+  }
+  function direMerci(prenom) {
+    if (!window.speechSynthesis) return;
+    try {
+      var u = new SpeechSynthesisUtterance(prenom ? 'Merci ' + prenom + ' pour la ronde !' : 'Merci pour la ronde !');
+      u.lang = 'fr-FR'; window.speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+
+  /* Réduit une photo avant envoi (1280 px, JPEG) */
   function compresserPhoto(fichier) {
     return new Promise(function (ok, ko) {
       var lecteur = new FileReader();
@@ -41,9 +67,9 @@
         var img = new Image();
         img.onerror = ko;
         img.onload = function () {
-          var max = 1280, w = img.width, h = img.height, r = Math.min(1, max / Math.max(w, h));
+          var r = Math.min(1, 1280 / Math.max(img.width, img.height));
           var c = document.createElement('canvas');
-          c.width = Math.round(w * r); c.height = Math.round(h * r);
+          c.width = Math.round(img.width * r); c.height = Math.round(img.height * r);
           c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
           ok(c.toDataURL('image/jpeg', 0.72));
         };
@@ -52,7 +78,6 @@
       lecteur.readAsDataURL(fichier);
     });
   }
-
   function visionneuse(src) {
     var v = el('div', { class: 'visionneuse', onclick: function () { v.remove(); } }, [el('img', { src: src, alt: '' })]);
     document.body.appendChild(v);
@@ -60,261 +85,289 @@
 
   window.MODULES.rondes = {
     afficher: function (vue, ctx) {
-      var outilId = ctx.outil.id;
       var modeDemo = !ctx.apiUrl;
-      var CLE_CFG = 'rondes_cfg_' + outilId;
-      var CLE_BROUILLON = 'rondes_brouillon_' + outilId;
-      var config = null;      // points de contrôle
-      var brouillon = null;   // ronde en cours
-      var zoneActive = null;
+      var CLE_CFG = 'ronde2_cfg_' + ctx.site.id;
+      var CLE_BROUILLON = 'ronde2_brouillon_' + ctx.site.id;
+      var config = null, R = null, onglet = 'ronde', index = 0, enFin = false, recapFin = null;
 
-      /* ---------- Démarrage : affichage immédiat depuis le téléphone ---------- */
       vue.appendChild(el('div', { class: 'chargement' }, [el('div', { class: 'squelette' }), el('div', { class: 'squelette' })]));
-
       Promise.all([PM.DB.get(CLE_CFG), PM.DB.get(CLE_BROUILLON)]).then(function (r) {
         config = r[0] || (modeDemo ? DEMO : null);
-        brouillon = r[1] || null;
-        if (config) afficherTout();
-        if (!modeDemo) rafraichirDepuisServeur(!config);
+        R = r[1] && r[1].jour === jourCourant() ? r[1] : null;
+        if (config) demarrer();
+        if (!modeDemo) rafraichir(!config);
       });
 
-      function rafraichirDepuisServeur(premierChargement) {
+      function rafraichir(premier) {
         PM.Api.appeler(ctx.apiUrl, { action: 'config', cle: ctx.cle }, 25000).then(function (j) {
-          var neuf = { nomSite: j.nomSite, points: j.points, derniereRonde: j.derniereRonde, agents: j.agents || [] };
-          var change = JSON.stringify(neuf) !== JSON.stringify(config);
-          config = neuf;
-          PM.DB.set(CLE_CFG, neuf);
-          if (change) afficherTout();
+          delete j.ok;
+          var change = JSON.stringify(j) !== JSON.stringify(config);
+          config = j; PM.DB.set(CLE_CFG, j);
+          if (change && onglet === 'ronde' && !enFin) demarrer();
         })['catch'](function (e) {
-          if (premierChargement) {
+          if (premier) {
             vue.innerHTML = '';
-            vue.appendChild(el('div', { class: 'vide-msg' }, [
-              'Impossible de charger les points de contrôle.', el('br'), el('span', { class: 'petit' }, [e.message]), el('br'), el('br'),
-              el('button', { class: 'btn-second', onclick: function () { location.hash = 'reglages'; } }, ['Ouvrir les réglages'])
-            ]));
-          } else {
-            PM.toast('Hors ligne : points de contrôle du dernier chargement');
-          }
+            vue.appendChild(el('div', { class: 'vide-msg' }, ['Impossible de charger les points de contrôle.', el('br'), el('span', { class: 'petit' }, [e.message]), el('br'), el('br'),
+              el('button', { class: 'btn-second', onclick: function () { location.hash = 'reglages'; } }, ['Ouvrir les réglages'])]));
+          } else PM.toast('Hors ligne : points de contrôle du dernier chargement');
         });
       }
 
-      function sauverBrouillon() { return PM.DB.set(CLE_BROUILLON, brouillon); }
+      function sauver() { if (R) PM.DB.set(CLE_BROUILLON, R); }
 
+      /* Zones contiguës dans l'ordre des points (comme regrouperParZone_) */
       function zones() {
-        var ordre = [];
-        config.points.forEach(function (p) { if (ordre.indexOf(p.zone) < 0) ordre.push(p.zone); });
-        return ordre;
-      }
-
-      /* ---------- Choix de l'agent ---------- */
-      function ecranAgent() {
-        vue.innerHTML = '';
-        var saisie = el('input', { type: 'text', placeholder: 'Ton prénom', value: '' });
-        var valider = function (nom) {
-          nom = (nom || '').trim();
-          if (!nom) { PM.toast('Indique ton prénom'); return; }
-          PM.Prefs.set('agent', nom);
-          afficherTout();
-        };
-        var boutons = el('div', { class: 'agents' });
-        (config.agents || []).forEach(function (a) {
-          boutons.appendChild(el('button', { class: 'btn-second', onclick: function () { valider(a); } }, [a]));
+        var z = [];
+        config.points.forEach(function (p, i) {
+          var d = z[z.length - 1];
+          if (d && d.nom === p.zone) d.indices.push(i); else z.push({ nom: p.zone, indices: [i] });
         });
-        vue.appendChild(el('div', { class: 'bandeau' }, [
-          el('div', { style: 'font-weight:700;font-size:18px' }, ['Qui fait la ronde ?']),
-          el('div', { class: 'petit' }, ['Retenu sur ce téléphone, modifiable ensuite.']),
-          boutons,
-          el('div', { class: 'champ' }, [saisie]),
-          el('button', { class: 'btn-principal', onclick: function () { valider(saisie.value); } }, ['Continuer'])
-        ]));
+        return z;
+      }
+      function zoneDe(i) { return zones().filter(function (z) { return z.indices.indexOf(i) >= 0; })[0]; }
+      function rep(i) { return R.reponses[cleDuPoint(config.points[i])]; }
+
+      function demarrer() {
+        if (!R) R = { jour: jourCourant(), agent: PM.Prefs.get('agent', ''), debut: null, reponses: {} };
+        index = config.points.length;
+        for (var i = 0; i < config.points.length; i++) { var x = rep(i); if (!x || !x.reponse) { index = i; break; } }
+        enFin = false;
+        afficher();
       }
 
-      /* ---------- Écran principal ---------- */
-      function afficherTout(hautDePage) {
-        var y = window.scrollY;
-        var agent = PM.Prefs.get('agent', '');
-        if (!agent) { ecranAgent(); return; }
-        if (!brouillon) {
-          brouillon = { rondeId: PM.uid(), agent: agent, debut: maintenantIso(), reponses: {}, zonesEnvoyees: {} };
-          sauverBrouillon();
-        }
-        var zs = zones();
-        if (!zoneActive || zs.indexOf(zoneActive) < 0) zoneActive = brouillon.zoneActive && zs.indexOf(brouillon.zoneActive) >= 0 ? brouillon.zoneActive : zs[0];
-
+      /* ---------- habillage : onglets ---------- */
+      function afficher() {
         vue.innerHTML = '';
         if (modeDemo) {
           vue.appendChild(el('div', { class: 'bandeau', style: 'border-color:var(--attente)' }, [
-            el('b', {}, ['Mode démonstration. ']),
-            el('span', { class: 'petit' }, ['Rien n’est envoyé. Renseigne l’URL du serveur dans ']),
-            el('a', { href: '#reglages' }, ['Réglages']), '.'
-          ]));
+            el('b', {}, ['Mode démonstration. ']), el('span', { class: 'petit' }, ['Rien n’est envoyé. Renseigne le serveur dans ']),
+            el('a', { href: '#reglages' }, ['Réglages']), '.']));
         }
-
-        // Bandeau : agent, dernière ronde, progression
-        var total = config.points.length;
-        var faits = Object.keys(brouillon.reponses).length;
-        var dr = config.derniereRonde;
-        var pct = total ? Math.round(faits / total * 100) : 0;
-        vue.appendChild(el('div', { class: 'bandeau' }, [
-          el('div', { class: 'bandeau-ligne' }, [
-            el('div', { class: 'anneau', style: '--p:' + pct }, [el('span', {}, [pct + '%'])]),
-            el('div', { style: 'flex:1;min-width:0' }, [
-              el('div', { style: 'font-weight:700' }, ['Agent : ' + brouillon.agent]),
-              el('div', { class: 'petit' }, [dr ? 'Dernière ronde : ' + dr.date + ' · ' + dr.agent + (dr.duree ? ' · ' + dr.duree + ' min' : '') : 'Aucune ronde enregistrée'])
-            ]),
-            el('button', { class: 'btn-second', onclick: function () {
-              if (faits && !confirm('Changer d’agent ? La ronde en cours reste enregistrée.')) return;
-              PM.Prefs.set('agent', ''); brouillon.agent = ''; ecranAgent();
-            } }, ['Changer'])
-          ]),
-          el('div', { class: 'progression' }, [el('div', { style: 'width:' + pct + '%' })]),
-          el('div', { class: 'petit', style: 'margin-top:6px' }, [faits + ' / ' + total + ' points contrôlés'])
-        ]));
-
-        // Onglets des zones
-        var barreZones = el('div', { class: 'zones' });
-        zs.forEach(function (z) {
-          var pts = config.points.filter(function (p) { return p.zone === z; });
-          var n = pts.filter(function (p) { return brouillon.reponses[cleDuPoint(p)]; }).length;
-          barreZones.appendChild(el('button', {
-            class: 'zone-chip' + (z === zoneActive ? ' actif' : '') + (n === pts.length ? ' complet' : ''),
-            onclick: function () { zoneActive = z; brouillon.zoneActive = z; sauverBrouillon(); afficherTout(true); }
-          }, [z, el('span', { class: 'cpt' }, [n + '/' + pts.length])]));
+        var tabs = el('div', { class: 'onglets', role: 'tablist' });
+        [['ronde', 'Ronde du jour'], ['dashboard', 'Tableau de bord'], ['messagerie', 'Messagerie']].forEach(function (t) {
+          tabs.appendChild(el('button', { role: 'tab', class: onglet === t[0] ? 'actif' : '', onclick: function () { onglet = t[0]; afficher(); } }, [t[1]]));
         });
-        vue.appendChild(barreZones);
-
-        // Points de la zone active
-        config.points.filter(function (p) { return p.zone === zoneActive; }).forEach(function (p) {
-          vue.appendChild(cartePoint(p));
-        });
-
-        // Boutons du bas
-        var idx = zs.indexOf(zoneActive);
-        var suivante = zs[idx + 1];
-        var pied = el('div', { class: 'pied-fixe' }, [el('div', { style: 'display:flex;gap:8px' }, [
-          suivante
-            ? el('button', { class: 'btn-principal', onclick: function () { validerZone(zoneActive); zoneActive = suivante; brouillon.zoneActive = suivante; sauverBrouillon(); afficherTout(true); } }, ['Zone suivante : ' + suivante + ' →'])
-            : el('button', { class: 'btn-principal', onclick: terminerRonde }, ['Terminer la ronde ✓'])
-        ])]);
-        vue.appendChild(pied);
-        window.scrollTo(0, hautDePage ? 0 : y);
+        vue.appendChild(tabs);
+        if (onglet === 'ronde') { if (enFin) ecranFin(); else ecranRonde(); }
+        else if (onglet === 'dashboard') ecranDashboard();
+        else ecranMessagerie();
       }
 
-      function cartePoint(p) {
-        var cle = cleDuPoint(p);
-        var rep = brouillon.reponses[cle];
-        var envoye = rep && rep.envoye;
-        var carte = el('div', { class: 'point' + (rep ? ' fait' : '') + (rep && rep.alerte ? ' en-alerte' : '') });
+      /* ---------- RONDE : un point à la fois ---------- */
+      function ecranRonde() {
+        var total = config.points.length;
+        // Agent
+        var champAgent = el('input', { type: 'text', placeholder: 'Ton prénom', value: R.agent || '' });
+        champAgent.addEventListener('change', function () { R.agent = champAgent.value.trim(); PM.Prefs.set('agent', R.agent); sauver(); });
+        var agentsRapides = el('div', { class: 'agents' }, (config.agents || []).slice(0, 5).map(function (a) {
+          return el('button', { class: 'btn-second' + (a === R.agent ? ' actif' : ''), onclick: function () { R.agent = a; PM.Prefs.set('agent', a); sauver(); afficher(); } }, [a]);
+        }));
+        var dr = config.derniereRonde;
+        vue.appendChild(el('div', { class: 'champ' }, [el('label', {}, ['Agent effectuant la ronde']), champAgent, R.agent ? null : agentsRapides,
+          dr ? el('div', { class: 'petit' }, ['Dernière ronde : ' + dr.date + ' · ' + dr.agent + (dr.duree ? ' · ' + dr.duree + ' min' : '')]) : null]));
 
-        var tete = el('div', { class: 'point-tete' }, [el('div', { class: 'point-libelle' }, [p.libelle])]);
-        if (p.photo && p.photo.indexOf('ID_DU_FICHIER') < 0) {
-          tete.appendChild(el('button', { class: 'point-ref', 'aria-label': 'Photo de référence', onclick: function () { visionneuse(p.photo); } }, [
-            el('img', { src: p.photo, loading: 'lazy', alt: '', onerror: function () { this.parentNode.remove(); } })
-          ]));
+        if (!total) { vue.appendChild(el('div', { class: 'vide-msg' }, ['Aucun point de contrôle actif. Vérifie la feuille PointsControle.'])); return; }
+        if (index >= total) { terminer(); return; }
+
+        // Progression
+        vue.appendChild(el('div', { class: 'ronde-progress' }, [el('div', { style: 'width:' + Math.round(index / total * 100) + '%' })]));
+        vue.appendChild(el('div', { class: 'ronde-nav' }, [
+          el('button', { class: 'ronde-precedent', disabled: index === 0 ? 'disabled' : null, onclick: function () { if (index > 0) { index--; afficher(); } } }, ['◀ Précédent']),
+          el('span', { class: 'petit' }, ['Point ' + (index + 1) + ' / ' + total])
+        ]));
+
+        var p = config.points[index], cle = cleDuPoint(p);
+        var x = R.reponses[cle] || (R.reponses[cle] = { reponse: null, note: undefined, photos: [], idSaisie: PM.uid(), envoye: false });
+        if (x.note === undefined) x.note = p.notes && p.notes.length === 1 ? p.notes[0] : null;
+
+        var carte = el('div', { class: 'bandeau ronde-carte' });
+        if (p.derniereAlerte) carte.appendChild(el('div', { class: 'ronde-badge-alerte' }, ['⚠ Dernière fois : ' + p.derniereReponseAlerte]));
+        carte.appendChild(el('div', { class: 'ronde-zone' }, [p.zone]));
+        carte.appendChild(el('h2', { class: 'ronde-libelle' }, [p.libelle]));
+
+        // Notes cliquables (la note choisie part en commentaire / détail de l'alerte)
+        if (p.notes && p.notes.length) {
+          var notes = el('div', { class: 'ronde-notes' });
+          p.notes.forEach(function (n) {
+            notes.appendChild(el('div', { class: 'ronde-note' + (x.note === n ? ' selectionnee' : ''), onclick: function () {
+              x.note = x.note === n ? null : n; sauver(); afficher();
+            } }, [n]));
+          });
+          carte.appendChild(notes);
         }
-        carte.appendChild(tete);
 
+        // Photos de référence
+        var refs = (p.photos || []).filter(function (u) { return u.indexOf('ID_DU_FICHIER') < 0; });
+        if (refs.length) {
+          carte.appendChild(el('div', { class: 'ronde-refs' + (refs.length > 1 ? ' multiples' : '') }, refs.map(function (u) {
+            return el('img', { src: u, alt: 'Photo de référence', loading: 'lazy', onclick: function () { visionneuse(u); }, onerror: function () { this.remove(); } });
+          })));
+        }
+
+        // Photos de la réponse (une ou plusieurs)
+        var input = el('input', { type: 'file', accept: 'image/*', capture: 'environment', multiple: 'multiple', style: 'display:none' });
+        input.addEventListener('change', function () {
+          var fichiers = Array.prototype.slice.call(input.files || []);
+          if (!fichiers.length) return;
+          PM.toast('Préparation de la photo…', 1200);
+          Promise.all(fichiers.map(compresserPhoto)).then(function (ds) {
+            x.photos = (x.photos || []).concat(ds); x.photosNouvelles = true; sauver(); afficher();
+          })['catch'](function () { PM.toast('Photo illisible'); });
+        });
+        var miniatures = el('div', { class: 'ronde-miniatures' }, (x.photos || []).map(function (src, k) {
+          return el('div', { class: 'ronde-mini' }, [
+            el('img', { src: src, alt: '', onclick: function () { visionneuse(src); } }),
+            el('button', { class: 'ronde-mini-x', 'aria-label': 'Retirer', onclick: function () { x.photos.splice(k, 1); sauver(); afficher(); } }, ['✕'])
+          ]);
+        }));
+        carte.appendChild(el('div', { class: 'ronde-photo' }, [input, el('button', { class: 'btn-photo', onclick: function () { input.click(); } }, ['📷 Ajouter une photo']), miniatures]));
+
+        // Réponses : un clic = enregistré + point suivant
         var grille = el('div', { class: 'reponses' });
         p.reponses.forEach(function (r) {
           var estAlerte = p.reponsesAlerte.indexOf(r) >= 0;
-          grille.appendChild(el('button', {
-            class: 'rep' + (rep && rep.reponse === r ? ' choisi' : '') + (estAlerte ? ' alerte' : ''),
-            disabled: envoye ? 'disabled' : null,
-            onclick: function () {
-              var ancien = brouillon.reponses[cle] || {};
-              brouillon.reponses[cle] = {
-                zone: p.zone, libelle: p.libelle, reponse: r, alerte: estAlerte,
-                commentaire: ancien.commentaire || '', photo: ancien.photo || null, horodatage: maintenantIso()
-              };
-              sauverBrouillon();
-              afficherTout();
-              if (estAlerte) PM.toast('Réponse d’alerte : ajoute un commentaire ou une photo si besoin');
-            }
-          }, [r]));
+          grille.appendChild(el('button', { class: 'rep' + (x.reponse === r ? ' choisi' : '') + (estAlerte ? ' alerte' : ''), onclick: function () {
+            debloquerAudio();
+            repondre(index, r);
+          } }, [r]));
         });
         carte.appendChild(grille);
-
-        // Commentaire + photo (dès qu'une réponse est choisie)
-        if (rep) {
-          var extras = el('div', { class: 'extras' });
-          if (rep.alerte || rep.commentaire) {
-            var ta = el('textarea', { placeholder: 'Commentaire (détail, valeur relevée…)', disabled: envoye ? 'disabled' : null });
-            ta.value = rep.commentaire || '';
-            ta.addEventListener('input', function () { rep.commentaire = ta.value; sauverBrouillon(); });
-            extras.appendChild(ta);
-          } else if (!envoye) {
-            extras.appendChild(el('button', { class: 'btn-photo', onclick: function () { rep.commentaire = ' '; afficherTout(); } }, ['+ Commentaire']));
-          }
-          if (!envoye) {
-            var input = el('input', { type: 'file', accept: 'image/*', capture: 'environment', style: 'display:none' });
-            input.addEventListener('change', function () {
-              if (!input.files[0]) return;
-              PM.toast('Préparation de la photo…', 1200);
-              compresserPhoto(input.files[0]).then(function (d) { rep.photo = d; sauverBrouillon(); afficherTout(); })
-                ['catch'](function () { PM.toast('Photo illisible'); });
-            });
-            extras.appendChild(input);
-            extras.appendChild(el('button', { class: 'btn-photo', onclick: function () { input.click(); } }, [rep.photo ? '📷 Remplacer' : '📷 Photo']));
-          }
-          if (rep.photo) extras.appendChild(el('img', { class: 'vignette', src: rep.photo, alt: 'Photo', onclick: function () { visionneuse(rep.photo); } }));
-          extras.appendChild(el('span', { class: 'statut-envoi' }, [envoye ? '✓ Validé' : 'Non validé']));
-          carte.appendChild(extras);
-        }
-        return carte;
+        if (x.envoye) carte.appendChild(el('div', { class: 'petit', style: 'margin-top:8px' }, ['✓ Déjà envoyé — une nouvelle réponse remplacera la précédente.']));
+        vue.appendChild(carte);
       }
 
-      /* Une zone validée : ses réponses partent dans la file d'envoi */
-      function validerZone(z) {
-        var aEnvoyer = Object.keys(brouillon.reponses).filter(function (k) {
-          var r = brouillon.reponses[k]; return r.zone === z && !r.envoye;
-        });
-        aEnvoyer.forEach(function (k) {
-          var r = brouillon.reponses[k];
-          r.envoye = true;
-          if (modeDemo) return;
-          PM.Envoi.ajouter(ctx.site.id, {
-            type: 'reponse', rondeId: brouillon.rondeId, agent: brouillon.agent,
-            horodatage: r.horodatage, zone: r.zone, libelle: r.libelle, reponse: r.reponse,
-            alerte: r.alerte, commentaire: (r.commentaire || '').trim(), photo: r.photo || null
-          }, !!r.photo);
-        });
-        sauverBrouillon();
-        return aEnvoyer.length;
+      function payload(i) {
+        var p = config.points[i], x = rep(i);
+        return {
+          type: 'reponse', idSaisie: x.idSaisie, agent: R.agent || '', horodatage: x.horodatage,
+          zone: p.zone, libelle: p.libelle, reponse: x.reponse, reponsesAlerte: p.reponsesAlerte,
+          commentaire: x.note || '', photos: x.photosNouvelles ? (x.photos || []) : [],
+          photoNomFichier: p.libelle.replace(/[^a-z0-9]+/gi, '_').toLowerCase()
+        };
+      }
+      function envoyer(i) {
+        var x = rep(i), pl = payload(i);
+        if (!modeDemo) PM.Envoi.ajouter(ctx.site.id, pl, pl.photos.length > 0);
+        x.envoye = true; x.photosNouvelles = false;
       }
 
-      function terminerRonde() {
-        var total = config.points.length;
-        var faits = Object.keys(brouillon.reponses).length;
-        if (faits < total && !confirm((total - faits) + ' point(s) sans réponse. Terminer quand même ?')) return;
-        zones().forEach(validerZone);
-        var fin = maintenantIso();
-        if (!modeDemo) {
-          PM.Envoi.ajouter(ctx.site.id, {
-            type: 'finRonde', rondeId: brouillon.rondeId, agent: brouillon.agent, debut: brouillon.debut, fin: fin
-          });
+      function repondre(i, r) {
+        var x = rep(i);
+        if (!R.debut) R.debut = new Date().toISOString();
+        x.reponse = r; x.horodatage = new Date().toISOString();
+        vibrerEtBip();
+        if (x.envoye) {
+          // Correction d'un point déjà envoyé : renvoi immédiat (la ligne sera remplacée)
+          envoyer(i); sauver(); PM.toast('Réponse corrigée');
+          afficher(); return;
         }
-        var alertes = Object.keys(brouillon.reponses).filter(function (k) { return brouillon.reponses[k].alerte; }).length;
-        var duree = Math.round((new Date(fin) - new Date(brouillon.debut)) / 60000);
-        brouillon = null;
-        PM.DB.del(CLE_BROUILLON);
+        var z = zoneDe(i);
+        if (z.indices[z.indices.length - 1] === i) z.indices.forEach(function (k) { if (rep(k) && rep(k).reponse && !rep(k).envoye) envoyer(k); });
+        sauver();
+        index = i + 1;
+        // Saute les points déjà répondus (retour en arrière puis reprise)
+        while (index < config.points.length && rep(index) && rep(index).reponse && rep(index).envoye) index++;
+        afficher();
+        window.scrollTo(0, 0);
+      }
 
-        vue.innerHTML = '';
-        var statut = el('div', { class: 'petit' }, ['']);
-        vue.appendChild(el('div', { class: 'bandeau', style: 'text-align:center;padding:28px 16px' }, [
-          el('div', { style: 'font-size:44px' }, ['✓']),
-          el('div', { style: 'font-size:22px;font-weight:800' }, ['Ronde terminée']),
-          el('p', {}, [faits + ' points contrôlés · ' + alertes + ' réponse(s) d’alerte · ' + duree + ' min']),
-          statut,
-          el('div', { style: 'height:12px' }),
-          el('button', { class: 'btn-principal', onclick: function () { location.hash = 'site/' + ctx.site.id; } }, ['Retour aux outils'])
-        ]));
-        function majStatut(n) {
+      /* ---------- Fin de ronde ---------- */
+      function terminer() {
+        // Points répondus mais pas encore envoyés (zone incomplète) : on envoie tout
+        config.points.forEach(function (p, i) { var x = rep(i); if (x && x.reponse && !x.envoye) envoyer(i); });
+        var fin = new Date().toISOString();
+        var nb = 0, alertes = 0;
+        config.points.forEach(function (p, i) { var x = rep(i); if (x && x.reponse) { nb++; if (p.reponsesAlerte.indexOf(x.reponse) >= 0) alertes++; } });
+        if (!modeDemo && R.debut) PM.Envoi.ajouter(ctx.site.id, { type: 'finRonde', agent: R.agent || '', debut: R.debut, fin: fin });
+        recapFin = { nb: nb, alertes: alertes, duree: R.debut ? Math.max(0, Math.round((new Date(fin) - new Date(R.debut)) / 60000)) : null };
+        direMerci(R.agent);
+        R = null; PM.DB.del(CLE_BROUILLON);
+        enFin = true;
+        afficher();
+      }
+
+      function ecranFin() {
+        var statut = el('div', { class: 'petit' });
+        function maj(n) {
           statut.textContent = modeDemo ? 'Mode démo : rien n’a été envoyé.'
             : (n ? (navigator.onLine ? 'Envoi en cours… (' + n + ' restant)' : 'Pas de réseau : envoi automatique dès le retour du réseau (' + n + ' en attente).')
-                 : 'Tout est enregistré dans la feuille Google ✓');
+                 : 'Tout est enregistré dans la feuille Google ✓' + (recapFin.alertes ? ' — alertes WhatsApp regroupées envoyées si le seuil est atteint.' : ''));
         }
-        PM.Envoi.surChangement(majStatut);
-        PM.Envoi.compter().then(majStatut);
+        PM.Envoi.surChangement(maj); PM.Envoi.compter().then(maj);
+        vue.appendChild(el('div', { class: 'bandeau', style: 'text-align:center;padding:28px 16px' }, [
+          el('div', { style: 'font-size:22px;font-weight:800' }, ['✅ Ronde terminée']),
+          el('p', {}, [recapFin.nb + ' point(s) renseigné(s), ' + (recapFin.alertes ? recapFin.alertes + ' réponse(s) en anomalie' : 'aucune alerte') + (recapFin.duree !== null ? ' · Durée : ' + recapFin.duree + ' min' : '') + '.']),
+          statut, el('div', { style: 'height:12px' }),
+          el('button', { class: 'btn-principal', onclick: function () { enFin = false; R = null; demarrer(); if (!modeDemo) rafraichir(false); } }, ['Démarrer une nouvelle ronde'])
+        ]));
+      }
+
+      /* ---------- Tableau de bord (en ligne) ---------- */
+      function ecranDashboard() {
+        var zone = el('div', {}, [el('div', { class: 'chargement' }, [el('div', { class: 'squelette' })])]);
+        vue.appendChild(zone);
+        if (modeDemo) { zone.innerHTML = ''; zone.appendChild(el('div', { class: 'vide-msg' }, ['Disponible une fois le serveur réglé.'])); return; }
+        PM.Api.appeler(ctx.apiUrl, { action: 'dashboard', cle: ctx.cle }, 30000).then(function (s) {
+          zone.innerHTML = '';
+          zone.appendChild(el('div', { class: 'ronde-stats' }, [
+            [s.nbJoursAvecRonde30j, 'jours de ronde (30 j)'], [s.tauxCompletionMoyen + '%', 'taux de complétion moyen'],
+            [s.totalEntrees30j, 'relevés (30 j)'], [s.messagesOuverts, 'message(s) non traité(s)']
+          ].map(function (c) { return el('div', { class: 'bandeau ronde-stat' }, [el('div', { class: 'ronde-stat-val' }, [String(c[0])]), el('div', { class: 'petit' }, [c[1]])]); })));
+          zone.appendChild(el('h3', { class: 'ronde-h3' }, ['Alertes les plus fréquentes (30 j)']));
+          zone.appendChild(s.topAlertes.length ? el('div', {}, s.topAlertes.map(function (a) {
+            return el('div', { class: 'bandeau ronde-ligne' }, [el('div', {}, [el('b', {}, [a.zone + ' — ' + a.libelle]), el('div', { class: 'petit' }, ['réponse : ' + a.reponse])]), el('span', { class: 'ronde-compte' }, [a.occurrences + '×'])]);
+          })) : el('p', { class: 'petit' }, ['Aucune alerte récurrente sur les 30 derniers jours.']));
+          zone.appendChild(el('h3', { class: 'ronde-h3' }, ['Dernières alertes']));
+          zone.appendChild(s.dernieresAlertes.length ? el('div', {}, s.dernieresAlertes.map(function (a) {
+            var photos = String(a.photoUrl || '').split('\n').filter(Boolean);
+            return el('div', { class: 'bandeau ronde-anomalie' }, [
+              el('b', {}, [a.zone + ' — ' + a.libelle]),
+              el('div', { class: 'petit' }, [a.horodatage + ' · ' + a.agent + ' · réponse : ' + a.reponse]),
+              a.commentaire ? el('div', { class: 'petit' }, [a.commentaire]) : null,
+              photos.length ? el('div', {}, photos.map(function (u, k) { return el('a', { href: u, target: '_blank', rel: 'noopener', class: 'ronde-lien-photo' }, ['📷 ' + (photos.length > 1 ? 'Photo ' + (k + 1) : 'Voir la photo')]); })) : null
+            ]);
+          })) : el('p', { class: 'petit' }, ['Aucune alerte récente.']));
+        })['catch'](function (e) { zone.innerHTML = ''; zone.appendChild(el('div', { class: 'vide-msg' }, ['Tableau de bord indisponible (réseau ?)', el('br'), el('span', { class: 'petit' }, [e.message])])); });
+      }
+
+      /* ---------- Messagerie (bugs / améliorations) ---------- */
+      function ecranMessagerie() {
+        var type = el('select', {}, ['Bug', 'Amélioration'].map(function (t) { return el('option', { value: t }, [t]); }));
+        var texte = el('textarea', { rows: '4', placeholder: 'Décris le problème ou l’idée…' });
+        vue.appendChild(el('div', { class: 'bandeau' }, [
+          el('h3', { class: 'ronde-h3', style: 'margin-top:0' }, ['Signaler un bug ou une amélioration']),
+          el('div', { class: 'champ' }, [el('label', {}, ['Type']), type]),
+          el('div', { class: 'champ' }, [el('label', {}, ['Message']), texte]),
+          el('button', { class: 'btn-principal', onclick: function () {
+            var t = texte.value.trim();
+            if (!t) { PM.toast('Écris un message avant d’envoyer.'); return; }
+            if (!modeDemo) PM.Envoi.ajouter(ctx.site.id, { type: 'message', agent: PM.Prefs.get('agent', ''), typeMessage: type.value, texte: t, horodatage: new Date().toISOString() });
+            texte.value = '';
+            PM.toast(modeDemo ? 'Démo : message non envoyé' : 'Message envoyé');
+            setTimeout(chargerListe, 2500);
+          } }, ['Envoyer'])
+        ]));
+        var liste = el('div');
+        vue.appendChild(el('h3', { class: 'ronde-h3' }, ['Historique']));
+        vue.appendChild(liste);
+        function chargerListe() {
+          if (modeDemo) { liste.innerHTML = ''; liste.appendChild(el('p', { class: 'petit' }, ['Disponible une fois le serveur réglé.'])); return; }
+          PM.Api.appeler(ctx.apiUrl, { action: 'messages', cle: ctx.cle }, 25000).then(function (j) {
+            liste.innerHTML = '';
+            if (!j.messages.length) { liste.appendChild(el('p', { class: 'petit' }, ['Aucun message pour le moment.'])); return; }
+            j.messages.forEach(function (m) {
+              liste.appendChild(el('div', { class: 'bandeau ronde-ligne' }, [
+                el('div', {}, [el('span', { class: 'ronde-type' }, [m.type]), ' ', el('b', {}, [m.agent]), el('span', { class: 'petit' }, [' · ' + m.horodatage]), el('div', {}, [m.texte])]),
+                m.statut === 'Nouveau'
+                  ? el('button', { class: 'btn-second', onclick: function () {
+                      PM.Api.appeler(ctx.apiUrl, { action: 'messageTraite', cle: ctx.cle, ligne: m.ligne }).then(chargerListe)['catch'](function (e) { PM.toast(e.message); });
+                    } }, ['Marquer traité'])
+                  : el('span', { class: 'petit' }, ['Traité'])
+              ]));
+            });
+          })['catch'](function () { liste.innerHTML = ''; liste.appendChild(el('p', { class: 'petit' }, ['Historique indisponible hors ligne.'])); });
+        }
+        chargerListe();
       }
     }
   };

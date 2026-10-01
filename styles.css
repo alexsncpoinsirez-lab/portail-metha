@@ -532,3 +532,55 @@ body.futur .chart-tooltip { background: rgba(10,18,30,.92); color: var(--texte);
 .nh3-etat { font-size: 12.5px; font-weight: 650; min-height: 16px; }
 .nh3-etat.good { color: var(--st-good, #0CA30C); } .nh3-etat.warn { color: #b7791f; } .nh3-etat.crit { color: var(--st-crit, #D03B3B); }
 .champ input[inputmode] { font-size: 18px; font-weight: 650; }
+
+/* =====================================================================
+   MODULE RONDE — déroulé point par point (comme l'appli d'origine)
+   ===================================================================== */
+.ronde-progress { height: 6px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin: 6px 0; }
+.ronde-progress > div { height: 100%; background: var(--ok); transition: width .25s; }
+body.futur .ronde-progress > div { background: linear-gradient(90deg, var(--ok), var(--neon)); box-shadow: 0 0 10px var(--ok); }
+.ronde-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.ronde-precedent { border: 0; background: none; color: var(--ok); font-weight: 700; padding: 6px 0; }
+.ronde-precedent:disabled { opacity: .3; }
+body.futur .ronde-precedent { color: var(--neon); font-family: var(--mono); font-size: 13px; }
+.ronde-carte { position: relative; }
+.ronde-badge-alerte {
+  margin-bottom: 12px; padding: 9px 12px; border-radius: 10px; background: var(--alerte); color: #fff;
+  font-weight: 800; font-size: 13.5px; text-align: center; animation: clignoter 1s ease-in-out infinite;
+}
+body.futur .ronde-badge-alerte { box-shadow: 0 0 22px rgba(255,77,109,.6); }
+@keyframes clignoter { 50% { opacity: .45; } }
+.ronde-zone { display: inline-block; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); margin-bottom: 10px; }
+body.futur .ronde-zone { font-family: var(--mono); color: var(--neon); background: color-mix(in srgb, var(--neon) 14%, transparent); border: 1px solid color-mix(in srgb, var(--neon) 50%, transparent); }
+.ronde-libelle { font-size: 21px; margin: 0 0 12px; line-height: 1.25; }
+.ronde-notes { display: grid; gap: 6px; margin-bottom: 12px; }
+.ronde-note { padding: 9px 11px; border-radius: 8px; border-left: 4px solid var(--texte-2); background: var(--surface-2); font-size: 14px; cursor: pointer; }
+.ronde-note.selectionnee { background: var(--alerte); border-left-color: var(--alerte); color: #fff; font-weight: 700; }
+.ronde-refs { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 12px; }
+.ronde-refs img { max-width: 100%; max-height: 220px; border-radius: 10px; cursor: zoom-in; }
+.ronde-refs.multiples img { max-width: 47%; max-height: 140px; object-fit: cover; }
+.ronde-photo { margin-bottom: 14px; }
+.ronde-miniatures { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.ronde-mini { position: relative; }
+.ronde-mini img { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; border: 1px solid var(--bord); display: block; }
+.ronde-mini-x { position: absolute; top: -8px; right: -8px; width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--alerte); background: var(--surface); color: var(--alerte); font-weight: 700; padding: 0; }
+.ronde-carte .rep { min-height: 54px; font-size: 15.5px; }
+.ronde-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ronde-stat { text-align: center; margin-bottom: 0; }
+.ronde-stat-val { font-size: 24px; font-weight: 800; color: var(--ok); }
+body.futur .ronde-stat-val { font-family: var(--mono); color: var(--neon); text-shadow: 0 0 12px rgba(56,225,255,.5); }
+.ronde-h3 { font-size: 15px; margin: 18px 0 10px; }
+body.futur .ronde-h3 { font-family: var(--mono); font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--neon); }
+.ronde-ligne { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ronde-compte { background: var(--alerte); color: #fff; border-radius: 99px; padding: 2px 10px; font-weight: 700; font-size: 12px; }
+.ronde-anomalie { border-left: 4px solid var(--alerte); margin-bottom: 8px; }
+.ronde-lien-photo { font-size: 12.5px; margin-right: 10px; color: var(--ok); font-weight: 600; }
+.ronde-type { background: var(--ok); color: #fff; border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
+body.futur .ronde-type { background: transparent; color: var(--neon); border: 1px solid var(--neon); }
+.nh3 .onglets, .onglets { overflow-x: auto; }
+textarea { width: 100%; border-radius: 12px; border: 1px solid var(--bord); padding: 10px 12px; font: inherit; background: var(--surface); color: var(--texte); }
+body.futur textarea, body.futur .champ select { background: rgba(0,0,0,.35); }
+/* question suivante : apparition rapide, sans flou (lisibilité terrain) */
+body.futur .ronde-carte { animation: entreeRapide .22s ease-out both; }
+@keyframes entreeRapide { from { opacity: .3; transform: translateX(14px); } }

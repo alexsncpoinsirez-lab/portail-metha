@@ -433,7 +433,7 @@
   window.addEventListener('hashchange', router);
   $('#btnReglages').addEventListener('click', function () { location.hash = 'reglages'; });
 
-  var VERSION_APP = '1.3.0';
+  var VERSION_APP = '1.4.0';
 
   /* ---------- Exposé aux modules ---------- */
   window.PM = { apiSite: apiSite, cleSite: cleSite, el: el, $: $, toast: toast, Prefs: Prefs, DB: DB, Api: Api, Envoi: Envoi, uid: uid, icone: icone };
