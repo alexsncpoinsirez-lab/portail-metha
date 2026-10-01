@@ -9,7 +9,7 @@
    Si url est vide, la carte s'affiche « Lien à renseigner ».
    ===================================================================== */
 var PORTAIL_CONFIG = {
-  versionConfig: 1,
+  versionConfig: 2,
 
   sites: [
     {
@@ -34,8 +34,10 @@ var PORTAIL_CONFIG = {
           description: 'Résultats Novatech AOV / TAC / MS',
           icone: 'analyse',
           type: 'lien',
-          url: ''
-        }
+          url: 'https://script.google.com/macros/s/AKfycbybpUlEFv5QXIk4iHkDgwkcRenaJTWH48IH2XUXdxbWtQeh0mntNLlUf_YOjANeGtBc/exec'
+        },
+        { id: 'bougies',   nom: 'Suivi Bougies',     description: 'Bougies du moteur de cogénération', icone: 'bougie',    type: 'lien', url: 'https://script.google.com/macros/s/AKfycbzmfVIauNzEocSeGDPt7qvDt0OAQo7o-uNSpuqU6yVPsKVk0IGVYUUXUyOatnSD1MOD/exec' },
+        { id: 'agitation', nom: 'Hauteur agitation', description: 'Suivi hauteur des agitateurs',      icone: 'agitation', type: 'lien', url: 'https://script.google.com/macros/s/AKfycbyFfo3Zi9Fa4mtEk7ZcwS6kP_9kD-PEJ_80l8PsMflwNk5yj_mh5e4RjnieBIf68Jbn/exec' }
       ]
     },
     {
@@ -54,12 +56,10 @@ var PORTAIL_CONFIG = {
           type: 'lien',
           url: 'https://docs.google.com/forms/d/1_xC0e7xDNlrgE_1ww5FNLta0KF4CEoR1YNwzTqzgJMQ/viewform'
         },
-        { id: 'bougies',     nom: 'Suivi Bougies',        description: 'Bougies du moteur de cogénération', icone: 'bougie',      type: 'lien', url: '' },
         { id: 'pt100',       nom: 'Températures PT100',   description: 'Sondes ESP32 des digesteurs',        icone: 'thermo',      type: 'lien', url: '' },
         { id: 'nh3',         nom: 'Suivi NH3',            description: 'Analyses NH3 et charbon actif',      icone: 'filtre',      type: 'interne', module: 'nh3' },
-        { id: 'agitation',   nom: 'Hauteur agitation',    description: 'Suivi hauteur des agitateurs',       icone: 'agitation',   type: 'lien', url: '' },
         { id: 'ppr',         nom: 'Plan de Prévention',   description: 'PPR entreprises extérieures',        icone: 'document',    type: 'lien', url: '' },
-        { id: 'analyses-arr',nom: 'Analyses digestat',    description: 'Résultats Novatech AOV / TAC / MS',  icone: 'analyse',     type: 'lien', url: '' }
+        { id: 'analyses-arr',nom: 'Analyses digestat',    description: 'Résultats Novatech AOV / TAC / MS',  icone: 'analyse',     type: 'lien', url: 'https://script.google.com/macros/s/AKfycbybpUlEFv5QXIk4iHkDgwkcRenaJTWH48IH2XUXdxbWtQeh0mntNLlUf_YOjANeGtBc/exec' }
       ]
     }
   ],
