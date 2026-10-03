@@ -90,20 +90,39 @@
       var CLE_BROUILLON = 'ronde2_brouillon_' + ctx.site.id;
       var config = null, R = null, onglet = 'ronde', index = 0, enFin = false, recapFin = null;
 
-      vue.appendChild(el('div', { class: 'chargement' }, [el('div', { class: 'squelette' }), el('div', { class: 'squelette' })]));
+      vue.appendChild(el('div', { class: 'chargement' }, [el('div', { class: 'squelette' }), el('div', { class: 'squelette' }),
+        el('p', { class: 'petit', style: 'text-align:center' }, ['Chargement des points de contrôle…'])]));
       Promise.all([PM.DB.get(CLE_CFG), PM.DB.get(CLE_BROUILLON)]).then(function (r) {
         config = r[0] || (modeDemo ? DEMO : null);
         R = r[1] && r[1].jour === jourCourant() ? r[1] : null;
-        if (config) demarrer();
         if (!modeDemo) rafraichir(!config);
-      });
+        if (config) demarrer();
+      })['catch'](probleme);
+
+      // En cas de souci, on affiche la cause au lieu de rester bloqué sur l'écran de chargement
+      function probleme(e) {
+        console.error('Ronde :', e);
+        vue.innerHTML = '';
+        vue.appendChild(el('div', { class: 'vide-msg' }, [
+          'La ronde n’a pas pu s’afficher.', el('br'),
+          el('span', { class: 'petit' }, [String(e && e.message || e)]), el('br'), el('br'),
+          el('button', { class: 'btn-second', onclick: function () {
+            Promise.all([PM.DB.del(CLE_CFG)]).then(function () { location.reload(); });
+          } }, ['Recharger les points depuis le serveur']), el('br'), el('br'),
+          el('button', { class: 'btn-second', onclick: function () {
+            if (!confirm('Effacer la ronde en cours sur cet appareil ? Les réponses déjà envoyées restent dans la feuille.')) return;
+            Promise.all([PM.DB.del(CLE_CFG), PM.DB.del(CLE_BROUILLON)]).then(function () { location.reload(); });
+          } }, ['Repartir de zéro sur cet appareil'])
+        ]));
+      }
 
       function rafraichir(premier) {
-        PM.Api.appeler(ctx.apiUrl, { action: 'config', cle: ctx.cle }, 25000).then(function (j) {
+        PM.Api.appeler(ctx.apiUrl, { action: 'config', cle: ctx.cle }, 45000).then(function (j) {
           delete j.ok;
+          if (!j.points || !j.points.length) throw new Error('Aucun point de contrôle actif reçu du serveur.');
           var change = JSON.stringify(j) !== JSON.stringify(config);
           config = j; PM.DB.set(CLE_CFG, j);
-          if (change && onglet === 'ronde' && !enFin) demarrer();
+          if (change && onglet === 'ronde' && !enFin) { try { demarrer(); } catch (err) { probleme(err); } }
         })['catch'](function (e) {
           if (premier) {
             vue.innerHTML = '';
