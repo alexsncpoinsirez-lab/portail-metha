@@ -401,7 +401,24 @@
         } }, [t[1]]);
       }))
     ]));
-    vue.appendChild(el('p', { class: 'petit' }, ['Version de l’appli : ' + VERSION_APP]));
+    // Version réellement installée sur ce téléphone (nom du cache du service worker, ex. « v17 »)
+    var ligneVersion = el('p', { class: 'petit' }, ['Version installée : …']);
+    if (window.caches) caches.keys().then(function (k) {
+      var v = k.filter(function (x) { return x.indexOf('portail-metha-') === 0; }).sort().pop();
+      ligneVersion.textContent = 'Version installée : ' + (v ? v.replace('portail-metha-', '') : 'aucune (pas de cache)');
+    });
+    vue.appendChild(el('div', { class: 'bandeau' }, [
+      el('div', { style: 'font-weight:700;margin-bottom:6px' }, ['Mise à jour']),
+      ligneVersion,
+      el('p', { class: 'petit' }, ['Si une nouveauté publiée sur GitHub n’apparaît pas, ce bouton efface la copie gardée sur ce téléphone et recharge tout. Les saisies en attente d’envoi sont conservées.']),
+      el('button', { class: 'btn-second', onclick: function () {
+        var etapes = [];
+        if (navigator.serviceWorker) etapes.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+        if (window.caches) etapes.push(caches.keys().then(function (k) { return Promise.all(k.map(function (x) { return caches.delete(x); })); }));
+        toast('Mise à jour…');
+        Promise.all(etapes)['catch'](function () {}).then(function () { location.reload(); });
+      } }, ['Forcer la mise à jour'])
+    ]));
   }
 
   /* ---------- Thème (futuriste par défaut) ---------- */
@@ -448,7 +465,17 @@
   });
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('sw.js')['catch'](function () {});
+      navigator.serviceWorker.register('sw.js').then(function (reg) {
+        // vérifie s'il y a une nouvelle version à chaque retour sur l'appli
+        document.addEventListener('visibilitychange', function () { if (!document.hidden) reg.update()['catch'](function () {}); });
+      })['catch'](function () {});
+      // nouvelle version installée -> on recharge une fois pour l'afficher tout de suite
+      var avaitControleur = !!navigator.serviceWorker.controller, recharge = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!avaitControleur || recharge) return;
+        recharge = true;
+        location.reload();
+      });
     });
   }
 })();
