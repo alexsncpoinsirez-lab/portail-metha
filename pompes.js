@@ -22,6 +22,20 @@
   var OPERATEURS_DEFAUT = ['Adam', 'Alex', 'Benoit', 'Mathieu', 'Pierrick', 'Régis', 'Thibaut', 'Tigrou'];
   var NOM_SITE = { rotte: 'Metha de la Rotte', arraincourt: 'Arraincourt Biogaz' };
 
+  // Logos des fabricants, comme l'appli d'origine v15 (fichiers dans icons/)
+  var LOGOS = {
+    wangen: { src: 'icons/logo-wangen.png', nom: 'Wangen Pumpen' },
+    cc: { src: 'icons/logo-vogelsang.png', nom: 'Vogelsang' },
+    lobes: { src: 'icons/logo-vogelsang.png', nom: 'Vogelsang' },
+    broyeur: { src: 'icons/logo-vogelsang.png', nom: 'Vogelsang' },
+    separateur: { src: 'icons/logo-bauer.png', nom: 'Bauer' }
+  };
+  function logo(typeId, petit) {
+    var L = LOGOS[typeId];
+    if (!L) return null;
+    return el('span', { class: 'pp-logo' + (petit ? ' pp-logo-petit' : '') }, [el('img', { src: L.src, alt: L.nom })]);
+  }
+
   function demo(siteId) {
     var nom = NOM_SITE[siteId] || siteId;
     var D = { types: TYPES_DEFAUT, operateurs: OPERATEURS_DEFAUT, equipements: [], interventions: [] };
@@ -57,6 +71,7 @@
       var CLE_ATTENTE = 'pompes_attente_' + ctx.site.id;
       var D = null, attente = [];
       var ecran = 'liste', equipCourant = null, enEdition = null, messageForm = null, formModifie = false;
+      var brille = true; // reflet sur les logos : seulement à l'arrivée sur un écran, pas à chaque rafraîchissement
 
       vue.appendChild(el('div', { class: 'chargement' }, [el('div', { class: 'squelette' }), el('div', { class: 'squelette' })]));
       Promise.all([PM.DB.get(CLE_DONNEES), PM.DB.get(CLE_ATTENTE)]).then(function (r) {
@@ -116,6 +131,8 @@
               i.date = p.date; i.operateur = p.operateur; i.pieces = p.pieces || []; i.commentaire = p.commentaire || '';
               i.horametre = vide(p.horametre) ? null : p.horametre; i.tonnage = vide(p.tonnage) ? null : p.tonnage; i.enAttente = true;
             });
+          } else if (p.type === 'pompes.releve') {
+            E.equipements.forEach(function (e) { if (e.id === p.equipementId) { e.horametreActuel = p.horametre; e.dateReleve = p.date; e.releveEnAttente = true; } });
           } else if (p.type === 'pompes.suppression') {
             E.interventions = E.interventions.filter(function (i) { return i.id !== p.interventionId; });
           }
@@ -152,7 +169,8 @@
         var y = window.scrollY;
         formModifie = false;
         vue.innerHTML = '';
-        var racine = el('div', { class: 'pompes' });
+        var racine = el('div', { class: 'pompes' + (brille ? ' pp-brille' : '') });
+        brille = false;
         vue.appendChild(racine);
         if (modeDemo) {
           racine.appendChild(el('div', { class: 'bandeau', style: 'border-color:var(--attente)' }, [
@@ -175,14 +193,20 @@
         E.equipements.forEach(function (e, i) {
           var t = E.typeIndex[e.type];
           var liste = interventionsDe(E, e.id), der = liste[liste.length - 1];
-          grille.appendChild(el('button', { class: 'pp-carte', type: 'button', style: '--i:' + i, onclick: function () {
-            ecran = 'detail'; equipCourant = e.id; enEdition = null; messageForm = null; afficher(); window.scrollTo(0, 0);
+          var ecoule = (e.horametreActuel !== null && e.horametreActuel !== undefined && e.horametre !== null && e.horametre !== undefined)
+            ? Math.max(0, e.horametreActuel - e.horametre) : null;
+          var carte = el('div', { class: 'pp-carte', role: 'button', tabindex: '0', style: '--i:' + i, onclick: function () {
+            ecran = 'detail'; equipCourant = e.id; enEdition = null; messageForm = null; brille = true; afficher(); window.scrollTo(0, 0);
           } }, [
+            el('div', { class: 'pp-carte-tete' }, [logo(e.type) || el('span', { class: 'pp-badge' }, [t ? t.label : e.type]),
+              el('button', { class: 'pp-hrs', type: 'button', title: 'Relever le compteur horaire', onclick: function (ev) { ev.stopPropagation(); ouvrirReleve(e); } }, ['HRS'])]),
             el('div', { class: 'pp-nom' }, [e.nom + (e.enAttente ? ' ⏳' : '')]),
-            el('span', { class: 'pp-badge' }, [t ? t.label : e.type]),
-            el('div', { class: 'pp-compteur' }, [fmtH(e.horametre), t && t.tonnage ? el('div', { class: 'pp-unite' }, [fmtT(e.tonnage)]) : null]),
-            el('div', { class: 'pp-der' }, [der ? 'Dernière intervention : ' + fmtDateFR(der.date) + ' · ' + der.operateur + (der.enAttente ? ' ⏳' : '') : 'Aucune intervention enregistrée'])
-          ]));
+            ecoule !== null
+              ? el('div', { class: 'pp-ecoule' }, [el('b', {}, [fmtH(ecoule)]), ' depuis la dernière intervention' + (e.releveEnAttente ? ' ⏳' : '')])
+              : el('div', { class: 'pp-ecoule pp-gris' }, ['Heures écoulées : — (appuie sur HRS)'])
+          ]);
+          carte.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') carte.click(); });
+          grille.appendChild(carte);
         });
         racine.appendChild(E.equipements.length ? grille : el('div', { class: 'vide-msg' }, ['Aucun matériel suivi sur ce site.']));
       }
@@ -196,8 +220,8 @@
         if (enEdition && !iv) enEdition = null;
 
         racine.appendChild(el('div', { class: 'pp-barre' }, [
-          el('button', { class: 'btn-second', type: 'button', onclick: function () { ecran = 'liste'; enEdition = null; afficher(); window.scrollTo(0, 0); } }, ['← Matériels']),
-          el('div', { class: 'pp-detail-nom' }, [el('span', {}, [e.nom]),
+          el('button', { class: 'btn-second', type: 'button', onclick: function () { ecran = 'liste'; enEdition = null; brille = true; afficher(); window.scrollTo(0, 0); } }, ['← Matériels']),
+          el('div', { class: 'pp-detail-nom' }, [logo(e.type, true), el('span', {}, [e.nom]),
             el('button', { class: 'pp-icone', type: 'button', title: 'Renommer', 'aria-label': 'Renommer', onclick: function () { ouvrirRenommer(e); } }, ['✎'])]),
           el('span', { class: 'pp-badge' }, [t ? t.label : e.type])
         ]));
@@ -390,6 +414,32 @@
         ].concat(contenu)));
         document.body.appendChild(fond);
         return fermer;
+      }
+
+      /* ---------- bouton HRS : relevé du compteur horaire actuel ---------- */
+      function ouvrirReleve(e) {
+        var input = el('input', { id: 'pp-hrs', type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: 'ex : 21 300' });
+        var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
+        var btn = el('button', { class: 'btn-principal', type: 'button' }, ['Enregistrer le relevé']);
+        var infos = [];
+        if (e.horametreActuel !== null && e.horametreActuel !== undefined) infos.push('Dernier relevé : ' + fmtH(e.horametreActuel) + (e.dateReleve ? ' le ' + fmtDateFR(e.dateReleve) : '') + '.');
+        infos.push(e.horametre !== null && e.horametre !== undefined ? 'Compteur à la dernière intervention : ' + fmtH(e.horametre) + '.' : 'Aucun compteur saisi lors des interventions : les heures écoulées ne pourront pas être calculées.');
+        var fermer = modale('Compteur horaire', e.nom, [
+          el('div', { class: 'ag-encadre' }, [infos.join(' ')]),
+          el('div', { class: 'champ' }, [el('label', { for: 'pp-hrs' }, ['Compteur horaire actuel (h)']), input]), btn, msg]);
+        function go() {
+          var h = nombre(input.value);
+          if (h === '' || isNaN(h)) { msg.textContent = 'Saisis le compteur horaire.'; msg.hidden = false; return; }
+          var ref = (e.horametreActuel !== null && e.horametreActuel !== undefined) ? e.horametreActuel : e.horametre;
+          if (ref !== null && ref !== undefined && h < ref &&
+            !window.confirm('Le compteur saisi (' + h + ' h) est inférieur au dernier relevé connu (' + ref + ' h). Continuer quand même ?')) return;
+          saisir({ type: 'pompes.releve', equipementId: e.id, horametre: h, date: aujourdhui() });
+          fermer(); afficher();
+          PM.toast('Relevé enregistré : ' + fmtH(h) + '.');
+        }
+        btn.addEventListener('click', go);
+        input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); go(); } });
+        setTimeout(function () { input.focus(); }, 30);
       }
 
       function ouvrirRenommer(e) {
