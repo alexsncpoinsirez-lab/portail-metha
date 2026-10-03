@@ -36,11 +36,57 @@
   function svgEl(tag, attrs) { var e = document.createElementNS(NS, tag); for (var k in attrs) if (attrs[k] !== null && attrs[k] !== undefined) e.setAttribute(k, attrs[k]); return e; }
   function couleur(p) { return COULEUR_POINT[p] ? 'var(' + COULEUR_POINT[p] + ')' : 'var(--texte-2)'; }
 
+  /* Les rapports Novatech arrivent en plusieurs PDF (AOV/TAC, MS, renvois…) et chaque PDF
+     répète parfois la même ligne d'analyse. On regroupe donc tout par cuve + date d'analyse :
+     une seule mesure par cuve et par jour, avec toutes ses valeurs (pH, AOV, TAC, ratio, MS). */
+  function consolider(lignes) {
+    var parCle = {}, ordre = [];
+    lignes.forEach(function (l) {
+      var d = String(l.Date_Analyse || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return; // ligne sans date d'analyse : inexploitable
+      var p = nomPoint(l), k = p + '::' + d;
+      if (!parCle[k]) { parCle[k] = { Point_Mesure: p, Date_Analyse: d, ID_PDF: 'jour::' + d, Liens: [], _comAov: '', _com: '' }; ordre.push(k); }
+      var m = parCle[k];
+      CHAMPS.forEach(function (c) { if (!vide(l[c[0]])) m[c[0]] = l[c[0]]; });
+      if (l.Lien_PDF && m.Liens.indexOf(l.Lien_PDF) < 0) m.Liens.push(l.Lien_PDF);
+      if (l.Commentaire_IA) { if (!vide(l.AOV) || !vide(l.Ratio_AOV_TAC)) m._comAov = l.Commentaire_IA; else m._com = l.Commentaire_IA; }
+    });
+    var res = ordre.map(function (k) {
+      var m = parCle[k];
+      m.Commentaire_IA = m._comAov || m._com; // l'avis sur l'AOV/TAC est plus utile que la mention MS
+      m.Lien_PDF = m.Liens[0] || '';
+      return m;
+    });
+    res.sort(function (a, b) { return a.Date_Analyse < b.Date_Analyse ? -1 : a.Date_Analyse > b.Date_Analyse ? 1 : 0; });
+    return res;
+  }
+  // Une cuve qui n'a plus d'analyse depuis 4 mois de plus que la plus récente du site
+  // (ex. Stockage, ou Préfosse qui n'est plus prélevée) est masquée par défaut.
+  var JOURS_INACTIF = 120;
+  var ORDRE_POINTS = ['Digesteur', 'Digesteur 2', 'Post-Digesteur', 'Préfosse', 'Stockage'];
+  function parOrdre(a, b) {
+    var ia = ORDRE_POINTS.indexOf(a), ib = ORDRE_POINTS.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  }
+  function pointsActifs(lignes) {
+    var der = {}, max = '';
+    lignes.forEach(function (l) { var p = nomPoint(l); if (!der[p] || l.Date_Analyse > der[p]) der[p] = l.Date_Analyse; if (l.Date_Analyse > max) max = l.Date_Analyse; });
+    var actifs = [], anciens = [];
+    Object.keys(der).forEach(function (p) {
+      var ecart = (new Date(max) - new Date(der[p])) / 86400000;
+      (ecart > JOURS_INACTIF ? anciens : actifs).push({ point: p, derniere: der[p] });
+    });
+    var ordre = ['Digesteur', 'Digesteur 2', 'Post-Digesteur'];
+    function rang(x) { var i = ordre.indexOf(x.point); return i < 0 ? 99 : i; }
+    actifs.sort(function (a, b) { return rang(a) - rang(b); });
+    return { actifs: actifs.map(function (x) { return x.point; }), anciens: anciens };
+  }
+
   window.MODULES.analyses = {
     afficher: function (vue, ctx) {
       var modeDemo = !ctx.apiUrl;
       var CLE = 'analyses_donnees_' + ctx.site.id;
-      var D = null, filtre = 'Tous', majLe = null;
+      var D = null, filtre = 'Tous', majLe = null, voirAnciens = false;
 
       vue.appendChild(el('div', { class: 'chargement' }, [el('div', { class: 'squelette' }), el('div', { class: 'squelette' })]));
       PM.DB.get(CLE).then(function (c) {
@@ -75,10 +121,10 @@
             el('b', {}, ['Mode démonstration. ']), el('span', { class: 'petit' }, ['Données fictives. Renseigne le serveur du site dans ']),
             el('a', { href: '#reglages' }, ['Réglages']), '.']));
         }
-        var toutes = D.lignes || [];
-        // filtre « Point de mesure » construit à partir des données réelles (comme l'original)
-        var points = [];
-        toutes.forEach(function (l) { var p = nomPoint(l); if (points.indexOf(p) < 0) points.push(p); });
+        var consolidees = consolider(D.lignes || []);
+        var pa = pointsActifs(consolidees);
+        var points = voirAnciens ? pa.actifs.concat(pa.anciens.map(function (x) { return x.point; })) : pa.actifs;
+        var toutes = consolidees.filter(function (l) { return points.indexOf(nomPoint(l)) >= 0; });
         if (filtre !== 'Tous' && points.indexOf(filtre) < 0) filtre = 'Tous';
         var sel = el('select', { 'aria-label': 'Point de mesure' }, [el('option', { value: 'Tous' }, ['Tous les points'])].concat(points.map(function (p) {
           return el('option', { value: p, selected: filtre === p ? 'selected' : null }, [p]);
@@ -87,7 +133,13 @@
         var btn = el('button', { class: 'btn-second', type: 'button' }, ['Actualiser']);
         btn.addEventListener('click', function () { if (modeDemo) PM.toast('Mode démonstration'); else rafraichir(false, btn); });
         racine.appendChild(el('div', { class: 'an-filtres' }, [sel, btn]));
-        racine.appendChild(el('p', { class: 'petit an-etat' }, [toutes.length + ' résultat(s)' + (D.majLe ? ' · mis à jour le ' + new Date(D.majLe).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '')]));
+        if (pa.anciens.length) {
+          var chk = el('input', { type: 'checkbox', checked: voirAnciens ? 'checked' : null });
+          chk.addEventListener('change', function () { voirAnciens = chk.checked; afficher(); });
+          racine.appendChild(el('label', { class: 'petit an-anciens' }, [chk, ' Afficher aussi les points sans analyse récente : ' +
+            pa.anciens.map(function (x) { return x.point + ' (dernière le ' + fmtDate(x.derniere) + ')'; }).join(', ')]));
+        }
+        racine.appendChild(el('p', { class: 'petit an-etat' }, [toutes.length + ' analyse(s) par cuve et par date' + (D.majLe ? ' · mis à jour le ' + new Date(D.majLe).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '')]));
 
         var donnees = toutes.filter(function (l) { return filtre === 'Tous' || nomPoint(l) === filtre; });
         if (!donnees.length) {
@@ -114,6 +166,7 @@
           CHAMPS.forEach(function (c) { if (!vide(l[c[0]])) parPoint[p].valeurs[c[0]] = { valeur: l[c[0]], date: d }; });
           if (d) parPoint[p].derniereDate = d;
         });
+        ordre.sort(parOrdre);
         var zone = el('div', { class: 'an-cartes' });
         ordre.forEach(function (p, i) {
           var e = parPoint[p], stats = [];
@@ -151,6 +204,7 @@
         var tip = el('div', { class: 'chart-tooltip' });
         cw.appendChild(svg); cw.appendChild(tip); bloc.appendChild(cw);
         var tous = [];
+        ordre.sort(parOrdre);
         ordre.forEach(function (p) { series[p].sort(function (a, b) { return a.t - b.t; }); tous = tous.concat(series[p]); });
         if (!tous.length) { svg.style.display = 'none'; cw.appendChild(el('div', { class: 'chart-empty' }, ['Pas encore de valeur pour ce paramètre.'])); return bloc; }
 
@@ -214,18 +268,23 @@
         });
         var recents = ordre.slice().reverse().slice(0, 30), cols = [];
         recents.forEach(function (k) { groupes[k].forEach(function (l) { var p = nomPoint(l); if (cols.indexOf(p) < 0) cols.push(p); }); });
+        cols.sort(parOrdre);
         var tbody = el('tbody');
         recents.forEach(function (k) {
           var g = groupes[k], premiere = g[0], parP = {};
           g.forEach(function (l) { parP[nomPoint(l)] = l; });
-          var com = g.map(function (l) { return l.Commentaire_IA; }).filter(Boolean)[0] || '';
+          var com = g.map(function (l) { return l._comAov; }).filter(Boolean)[0] || g.map(function (l) { return l.Commentaire_IA; }).filter(Boolean)[0] || '';
+          var liens = [];
+          g.forEach(function (l) { (l.Liens || (l.Lien_PDF ? [l.Lien_PDF] : [])).forEach(function (u) { if (liens.indexOf(u) < 0) liens.push(u); }); });
           tbody.appendChild(el('tr', {}, [el('td', { class: 'date-cell' }, [fmtDate(dateLigne(premiere))])]
             .concat(cols.map(function (p) { return el('td', { class: 'val-cell' }, [parP[p] ? resume(parP[p]) : '—']); }))
-            .concat([el('td', { class: 'an-com' }, [com]),
-              el('td', {}, [premiere.Lien_PDF ? el('a', { class: 'an-pdf', href: premiere.Lien_PDF, target: '_blank', rel: 'noopener' }, ['Voir le PDF']) : ''])])));
+            .concat([el('td', { class: 'an-com' }, [com ? el('div', { class: 'an-com-txt', title: 'Toucher pour tout lire', onclick: function () { this.classList.toggle('ouvert'); } }, [com]) : '']),
+              el('td', { class: 'an-liens' }, liens.slice(0, 3).map(function (u, i) {
+                return el('a', { class: 'an-pdf', href: u, target: '_blank', rel: 'noopener' }, [liens.length > 1 ? 'PDF ' + (i + 1) : 'Voir le PDF']);
+              }))])));
         });
         racine.appendChild(el('section', { class: 'bandeau' }, [
-          el('div', { class: 'carte-tete' }, [el('h2', {}, ['Derniers résultats']), el('span', { class: 'petit' }, [recents.length + ' rapport(s)'])]),
+          el('div', { class: 'carte-tete' }, [el('h2', {}, ['Derniers résultats']), el('span', { class: 'petit' }, [recents.length + ' date(s) d’analyse'])]),
           el('div', { class: 'table-scroll' }, [el('table', { class: 'nh3-table nh3-table-large' }, [
             el('thead', {}, [el('tr', {}, ['Date analyse'].concat(cols).concat(['Commentaire', '']).map(function (h) { return el('th', {}, [h]); }))]), tbody])])
         ]));

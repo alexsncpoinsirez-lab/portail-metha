@@ -797,3 +797,5 @@ body.futur .analyses .an-point { stroke: #0b111b; }
 .an-pdf { color: var(--accent); font-weight: 650; white-space: nowrap; }
 body.futur .an-pdf { color: var(--neon); }
 .an-pied { text-align: center; }
+.an-anciens { display: flex; align-items: flex-start; gap: 8px; margin: 8px 2px 0; cursor: pointer; } .an-anciens input { width: 18px; height: 18px; flex: none; accent-color: var(--ok); } .an-liens { white-space: nowrap; } .an-liens a + a { margin-left: 10px; }
+.an-com-txt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; } .an-com-txt.ouvert { display: block; }

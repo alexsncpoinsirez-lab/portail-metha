@@ -1,6 +1,6 @@
 /* Service worker : garde l'appli sur le téléphone -> ouverture instantanée, même sans réseau.
    Pour publier une mise à jour : changer le numéro de VERSION ci-dessous. */
-var VERSION = 'portail-metha-v11';
+var VERSION = 'portail-metha-v12';
 var FICHIERS = ['./', 'index.html', 'styles.css', 'config.js', 'app.js', 'rondes.js', 'nh3.js', 'bougies.js', 'agitation.js', 'analyses.js', 'icons/logo-prodeval.png',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
