@@ -1,7 +1,7 @@
 /* Service worker : garde l'appli sur le téléphone -> ouverture instantanée, même sans réseau.
    Pour publier une mise à jour : changer le numéro de VERSION ci-dessous. */
-var VERSION = 'portail-metha-v13';
-var FICHIERS = ['./', 'index.html', 'styles.css', 'config.js', 'app.js', 'rondes.js', 'nh3.js', 'bougies.js', 'agitation.js', 'analyses.js', 'pompes.js', 'icons/logo-prodeval.png',
+var VERSION = 'portail-metha-v17';
+var FICHIERS = ['./', 'index.html', 'styles.css', 'config.js', 'app.js', 'rondes.js', 'nh3.js', 'bougies.js', 'agitation.js', 'analyses.js', 'pompes.js', 'icons/logo-prodeval.png', 'icons/logo-wangen.png', 'icons/logo-vogelsang.png', 'icons/logo-bauer.png', 'icons/alu.jpg',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 // Fichiers indispensables : s'il en manque un, la mise à jour attend. Les images peuvent manquer sans tout bloquer.

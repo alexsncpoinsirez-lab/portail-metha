@@ -852,3 +852,36 @@ body.futur .pp-piece { background: rgba(255,255,255,.04); }
 body.futur .pp-piece.coche { border-color: var(--neon); background: color-mix(in srgb, var(--neon) 14%, transparent); }
 body.futur .pp-form textarea { background: rgba(255,255,255,.04); }
 @media (max-width: 420px) { .pp-deux { grid-template-columns: 1fr; } }
+
+/* logos des fabricants + bouton HRS (comme l'appli d'origine v15) */
+.pp-carte { cursor: pointer; }
+.pp-carte-tete { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; width: 100%; }
+/* plaque en alu brossé derrière les logos */
+.pp-logo { position: relative; overflow: hidden; display: inline-flex; align-items: center; border-radius: 9px; padding: 5px 8px; max-width: 70%;
+  /* texture alu brossé choisie par Alex (icons/alu.jpg) */
+  background: #c9cdd1 url('icons/alu.jpg') center / cover no-repeat;
+  border: 1px solid #8e959c;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.85), inset 0 -1px 0 rgba(0,0,0,.22), 0 2px 6px rgba(0,0,0,.28); }
+.pp-logo img { position: relative; z-index: 1; filter: drop-shadow(0 1px 0 rgba(255,255,255,.45)); }
+/* reflet qui traverse le logo à l'arrivée sur la page */
+.pp-logo::after { content: ''; position: absolute; z-index: 2; top: -30%; bottom: -30%; left: -70%; width: 45%; pointer-events: none;
+  background: linear-gradient(100deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.85) 50%, rgba(255,255,255,0) 100%);
+  transform: skewX(-20deg); opacity: 0; }
+.pp-brille .pp-logo::after { animation: ppReflet 1s cubic-bezier(.3,.6,.4,1) forwards; animation-delay: calc(var(--i, 0) * 110ms + .25s); }
+@keyframes ppReflet { 0% { left: -70%; opacity: 1; } 100% { left: 140%; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .pp-brille .pp-logo::after { animation: none; } }
+body.futur .pp-logo { border-color: rgba(200,215,230,.55); box-shadow: inset 0 1px 0 rgba(255,255,255,.85), inset 0 -1px 0 rgba(0,0,0,.25), 0 0 14px rgba(56,225,255,.12), 0 2px 8px rgba(0,0,0,.5); }
+.pp-logo img { display: block; height: 36px; width: auto; max-width: 100%; object-fit: contain; }
+.pp-logo-petit img { height: 26px; }
+.pp-hrs { flex: none; min-height: 40px; min-width: 56px; border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); font-weight: 800; font-size: 14px; letter-spacing: .04em; }
+.pp-hrs:active { transform: scale(.96); }
+.pp-ecoule { font-size: 13.5px; color: var(--texte-2); line-height: 1.35; }
+.pp-ecoule b { color: var(--accent); font-size: 16px; }
+.pp-gris { color: var(--texte-2); opacity: .85; }
+body.futur .pp-hrs { background: color-mix(in srgb, var(--neon) 12%, transparent); color: var(--neon); border-color: color-mix(in srgb, var(--neon) 45%, transparent);
+  font-family: var(--mono); box-shadow: 0 0 12px color-mix(in srgb, var(--neon) 20%, transparent); }
+body.futur .pp-ecoule b { color: var(--neon); font-family: var(--mono); }
+.pp-carte-titre .pp-badge { white-space: normal; max-width: 100%; line-height: 1.3; }
+.pp-barre .pp-detail-nom { flex: 1 1 100%; order: 2; font-size: 18px; gap: 8px; }
+.pp-barre > .pp-badge { margin-left: auto; }
