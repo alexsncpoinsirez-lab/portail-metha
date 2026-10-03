@@ -352,6 +352,53 @@
     });
   }
 
+  /* ---------- Lien de configuration : remplit serveur + clé d'un ou plusieurs sites ---------- */
+  function b64urlEncode(txt) {
+    return btoa(unescape(encodeURIComponent(txt))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function b64urlDecode(txt) {
+    txt = txt.replace(/-/g, '+').replace(/_/g, '/');
+    while (txt.length % 4) txt += '=';
+    return decodeURIComponent(escape(atob(txt)));
+  }
+  function lienConfig(ids) {
+    var data = ids.map(function (id) { return { i: id, u: apiSite(id), k: cleSite(id) }; })
+      .filter(function (d) { return d.u && d.k; });
+    if (!data.length) return '';
+    return location.origin + location.pathname.replace(/index\.html$/, '') + '#config/' + b64urlEncode(JSON.stringify(data));
+  }
+  // Lit un lien (ou juste la partie après #config/) et enregistre les réglages. Renvoie les noms des sites configurés.
+  function appliquerConfig(texte) {
+    var code = String(texte || '').trim();
+    var pos = code.indexOf('#config/');
+    if (pos >= 0) code = code.slice(pos + 8);
+    else code = code.replace(/^#?config\//, '');
+    var data;
+    try { data = JSON.parse(b64urlDecode(code)); } catch (e) { throw new Error('Lien de configuration invalide.'); }
+    var noms = [];
+    (Array.isArray(data) ? data : [data]).forEach(function (d) {
+      var s = site(d.i);
+      if (!s || !d.u || !/^https:\/\/script\.google(usercontent)?\.com\//.test(d.u)) return;
+      Prefs.set('api_site_' + s.id, d.u);
+      Prefs.set('cle_site_' + s.id, d.k || '');
+      noms.push(s.nom);
+    });
+    if (!noms.length) throw new Error('Lien de configuration invalide.');
+    Envoi.vider();
+    return noms;
+  }
+  function partagerLien(lien, titre, zone) {
+    if (!lien) { toast('Renseigne d’abord le serveur et la clé, puis « Enregistrer et tester ».'); return; }
+    zone.innerHTML = '';
+    var champ = el('input', { type: 'text', value: lien, readonly: 'readonly' });
+    zone.appendChild(el('div', { class: 'champ', style: 'margin-top:8px' }, [el('label', {}, ['Lien à envoyer à l’équipe (contient la clé : ne pas diffuser en dehors)']), champ]));
+    if (navigator.share) {
+      navigator.share({ title: titre, text: titre + ' — ouvre ce lien sur ton téléphone pour régler le portail :', url: lien })['catch'](function () {});
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(lien).then(function () { toast('Lien copié : colle-le dans WhatsApp ou un mail.'); })['catch'](function () { champ.select(); });
+    } else champ.select();
+  }
+
   function ecranReglages(vue) {
     entete('Réglages', 'Connexion aux serveurs Apps Script', '#');
     vue.appendChild(el('p', { class: 'petit' }, [
@@ -362,6 +409,7 @@
       var url = el('input', { type: 'url', value: apiSite(s.id), placeholder: 'https://script.google.com/macros/s/…/exec' });
       var cle = el('input', { type: 'text', value: cleSite(s.id), placeholder: 'Clé du site', autocomplete: 'off' });
       var res = el('div', { class: 'petit' });
+      var zone = el('div');
       vue.appendChild(el('div', { class: 'bandeau', style: '--n:' + (s.neon || s.couleur) }, [
         el('div', { style: 'font-weight:700' }, [s.nom]),
         el('div', { class: 'petit', style: 'margin-bottom:10px' }, [rapides.length
@@ -380,10 +428,32 @@
               Envoi.vider();
             })['catch'](function (e) { res.textContent = '✗ ' + e.message; });
           } }, ['Enregistrer et tester']),
+          el('button', { class: 'btn-second', onclick: function () {
+            partagerLien(lienConfig([s.id]), 'Portail Métha — ' + s.nom, zone);
+          } }, ['Partager la configuration']),
           res
-        ])
+        ]),
+        zone
       ]));
     });
+    // lien pour tous les sites + collage manuel d'un lien reçu
+    var zoneTous = el('div');
+    var collage = el('input', { type: 'text', placeholder: 'Colle ici un lien de configuration reçu', autocomplete: 'off' });
+    var resCollage = el('div', { class: 'petit' });
+    vue.appendChild(el('div', { class: 'bandeau' }, [
+      el('div', { style: 'font-weight:700;margin-bottom:6px' }, ['Configuration de l’équipe']),
+      el('p', { class: 'petit' }, ['Un lien règle d’un coup le téléphone d’un collègue : il l’ouvre, et le portail enregistre tout seul les serveurs et les clés.']),
+      el('button', { class: 'btn-second', onclick: function () {
+        partagerLien(lienConfig(CFG.sites.map(function (x) { return x.id; })), 'Portail Métha — tous les sites', zoneTous);
+      } }, ['Partager la configuration des deux sites']),
+      zoneTous,
+      el('div', { class: 'champ', style: 'margin-top:12px' }, [el('label', {}, ['Lien de configuration reçu']), collage]),
+      el('button', { class: 'btn-second', onclick: function () {
+        try { var noms = appliquerConfig(collage.value); toast('Configuré : ' + noms.join(', ')); router(); }
+        catch (e) { resCollage.textContent = '✗ ' + e.message; }
+      } }, ['Appliquer']),
+      resCollage
+    ]));
     vue.appendChild(el('div', { class: 'bandeau' }, [
       el('div', { style: 'font-weight:700;margin-bottom:6px' }, ['Nom de l’agent sur ce téléphone']),
       (function () {
@@ -400,6 +470,17 @@
           Prefs.set('theme', t[0]); appliquerTheme(); router();
         } }, [t[1]]);
       }))
+    ]));
+    // Installation comme une vraie appli (sans le petit logo Chrome sur l'icône)
+    var dejaInstallee = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+    vue.appendChild(el('div', { class: 'bandeau' }, [
+      el('div', { style: 'font-weight:700;margin-bottom:6px' }, ['Installer sur ce téléphone']),
+      dejaInstallee ? el('p', { class: 'petit' }, ['Le portail est installé comme une appli sur ce téléphone.'])
+        : window.__invitInstall ? el('button', { class: 'btn-principal', onclick: function () {
+            var inv = window.__invitInstall; window.__invitInstall = null;
+            inv.prompt(); inv.userChoice.then(function () { router(); });
+          } }, ['Installer l’appli'])
+        : el('p', { class: 'petit' }, ['Dans Chrome : menu ⋮ → « Installer l’application » (ou « Ajouter à l’écran d’accueil » puis « Installer », pas « Créer un raccourci »). Sur iPhone : Safari → Partager → « Sur l’écran d’accueil ».'])
     ]));
     // Version réellement installée sur ce téléphone (nom du cache du service worker, ex. « v17 »)
     var ligneVersion = el('p', { class: 'petit' }, ['Version installée : …']);
@@ -443,6 +524,14 @@
     vue.removeAttribute('style');
     window.scrollTo(0, 0);
     var p = h.split('/');
+    if (p[0] === 'config') {
+      try {
+        var noms = appliquerConfig(h);
+        toast('Portail configuré : ' + noms.join(', '), 4500);
+      } catch (e) { toast('Lien de configuration invalide.', 4500); }
+      history.replaceState(null, '', location.pathname); // la clé ne reste pas dans l'adresse
+      p = [''];
+    }
     if (p[0] === 'site') ecranSite(vue, p[1]);
     else if (p[0] === 'outil') ecranOutil(vue, p[1]);
     else if (p[0] === 'reglages') ecranReglages(vue);
@@ -463,6 +552,8 @@
     router();
     Envoi.vider();
   });
+  // Chrome propose l'installation : on garde l'invitation pour le bouton « Installer l'appli » (Réglages)
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__invitInstall = e; });
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     window.addEventListener('load', function () {
       navigator.serviceWorker.register('sw.js').then(function (reg) {
