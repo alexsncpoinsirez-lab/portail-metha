@@ -216,106 +216,17 @@
         var e = E.equipements.filter(function (x) { return x.id === equipCourant; })[0];
         var t = E.typeIndex[e.type];
         var liste = interventionsDe(E, e.id);
-        var iv = enEdition ? liste.filter(function (x) { return x.id === enEdition; })[0] : null;
-        if (enEdition && !iv) enEdition = null;
 
         racine.appendChild(el('div', { class: 'pp-barre' }, [
           el('button', { class: 'btn-second', type: 'button', onclick: function () { ecran = 'liste'; enEdition = null; brille = true; afficher(); window.scrollTo(0, 0); } }, ['← Matériels']),
           el('div', { class: 'pp-detail-nom' }, [logo(e.type, true), el('span', {}, [e.nom]),
             el('button', { class: 'pp-icone', type: 'button', title: 'Renommer', 'aria-label': 'Renommer', onclick: function () { ouvrirRenommer(e); } }, ['✎'])]),
-          el('span', { class: 'pp-badge' }, [t ? t.label : e.type])
-        ]));
-
-        /* formulaire nouvelle intervention / modification */
-        var operateurs = E.operateurs;
-        var selOp = el('select', { id: 'pp-op' }, operateurs.map(function (o) { return el('option', { value: o }, [o]); }).concat([el('option', { value: '__autre__' }, ['Autre…'])]));
-        var inAutre = el('input', { id: 'pp-autre', type: 'text', placeholder: 'Nom' });
-        var champAutre = el('div', { class: 'champ', hidden: 'hidden' }, [el('label', { for: 'pp-autre' }, ['Nom de l’opérateur']), inAutre]);
-        var inDate = el('input', { id: 'pp-date', type: 'date' });
-        var inH = el('input', { id: 'pp-h', type: 'text', inputmode: 'decimal', placeholder: 'vide si non relevé', autocomplete: 'off' });
-        var inT = el('input', { id: 'pp-t', type: 'text', inputmode: 'decimal', placeholder: 'vide si non relevé', autocomplete: 'off' });
-        var inCom = el('textarea', { id: 'pp-com', rows: '2', placeholder: 'Observations, référence pièce, etc.' });
-        var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
-        var ok = el('p', { class: 'pp-ok', hidden: 'hidden' });
-
-        var dernierOp = PM.Prefs.get('pompes_operateur', '');
-        if (iv) {
-          if (operateurs.indexOf(iv.operateur) >= 0) selOp.value = iv.operateur;
-          else { selOp.value = '__autre__'; inAutre.value = iv.operateur || ''; champAutre.hidden = false; }
-          inDate.value = iv.date || '';
-          inH.value = iv.horametre === null ? '' : String(iv.horametre).replace('.', ',');
-          inT.value = iv.tonnage === null ? '' : String(iv.tonnage).replace('.', ',');
-          inCom.value = iv.commentaire || '';
-        } else {
-          if (operateurs.indexOf(dernierOp) >= 0) selOp.value = dernierOp;
-          inDate.value = aujourdhui();
-        }
-        selOp.addEventListener('change', function () { champAutre.hidden = selOp.value !== '__autre__'; });
-
-        var der = liste[liste.length - 1];
-        var aide = iv ? 'Vous modifiez une intervention déjà enregistrée. Les compteurs saisis restent des relevés cumulés.'
-          : ((e.horametre === null && e.tonnage === null) ? 'Aucun relevé de compteur enregistré — les compteurs sont facultatifs.'
-            : 'Dernier relevé connu : ' + fmtH(e.horametre) + (t && t.tonnage ? ' · ' + fmtT(e.tonnage) : '') + '.')
-            + (der ? ' Dernière intervention : ' + fmtDateFR(der.date) + '.' : '');
-
-        var pieces = el('div', { class: 'pp-pieces' });
-        (t ? t.pieces : []).forEach(function (p) {
-          var cb = el('input', { type: 'checkbox', value: p.id, checked: iv && iv.pieces.indexOf(p.id) >= 0 ? 'checked' : null });
-          var chip = el('label', { class: 'pp-piece' + (cb.checked ? ' coche' : '') }, [cb, el('span', {}, [p.label])]);
-          cb.addEventListener('change', function () { chip.classList.toggle('coche', cb.checked); });
-          pieces.appendChild(chip);
-        });
-
-        var btn = el('button', { class: 'btn-principal', type: 'button' }, [iv ? 'Enregistrer les modifications' : 'Enregistrer l’intervention']);
-        btn.addEventListener('click', function () {
-          msg.hidden = true; ok.hidden = true;
-          function erreur(txt) { msg.textContent = txt; msg.hidden = false; }
-          var operateur = selOp.value === '__autre__' ? inAutre.value.trim() : selOp.value;
-          if (!operateur) return erreur('Veuillez indiquer l’opérateur.');
-          if (!inDate.value) return erreur('Veuillez indiquer une date.');
-          var h = nombre(inH.value);
-          if (h !== '' && isNaN(h)) return erreur('Compteur horaire invalide — laissez le champ vide s’il n’a pas été relevé.');
-          if (!iv && h !== '' && e.horametre !== null && h < e.horametre &&
-            !window.confirm('Le compteur saisi (' + h + ' h) est inférieur au dernier relevé (' + e.horametre + ' h). Continuer quand même ?')) return;
-          var to = '';
-          if (t && t.tonnage) {
-            to = nombre(inT.value);
-            if (to !== '' && isNaN(to)) return erreur('Tonnage invalide — laissez le champ vide s’il n’a pas été relevé.');
-            if (!iv && to !== '' && e.tonnage !== null && to < e.tonnage &&
-              !window.confirm('Le tonnage saisi (' + to + ' T) est inférieur au dernier relevé (' + e.tonnage + ' T). Continuer quand même ?')) return;
-          }
-          var choix = Array.prototype.map.call(pieces.querySelectorAll('input:checked'), function (c) { return c.value; });
-          var donnees = { operateur: operateur, date: inDate.value, horametre: h, tonnage: to, pieces: choix, commentaire: inCom.value.trim() };
-          if (iv) { donnees.type = 'pompes.modification'; donnees.interventionId = iv.id; }
-          else { donnees.type = 'pompes.intervention'; donnees.interventionId = PM.uid() + PM.uid(); donnees.equipementId = e.id; }
-          if (navigator.vibrate) navigator.vibrate(25);
-          if (operateurs.indexOf(operateur) >= 0) PM.Prefs.set('pompes_operateur', operateur);
-          saisir(donnees);
-          var texte = iv ? 'Intervention modifiée.' : 'Intervention enregistrée.';
-          messageForm = texte;
-          enEdition = null;
-          afficher();
-          PM.toast(texte + (modeDemo || navigator.onLine ? '' : ' Envoi dès le retour du réseau.'));
-        });
-
-        var champsCompteurs = [el('div', { class: 'champ' }, [el('label', { for: 'pp-date' }, ['Date']), inDate]),
-          el('div', { class: 'champ' }, [el('label', { for: 'pp-h' }, ['Compteur horaire (h) — facultatif']), inH])];
-        if (messageForm) { ok.textContent = messageForm; ok.hidden = false; messageForm = null; }
-
-        var marquer = function () { formModifie = true; };
-        racine.appendChild(el('section', { class: 'bandeau pp-form' + (iv ? ' pp-edition' : ''), oninput: marquer, onchange: marquer }, [
-          el('div', { class: 'pp-form-tete' }, [
-            el('h3', {}, [iv ? 'Modifier l’intervention du ' + fmtDateFR(iv.date) : 'Nouvelle intervention']),
-            iv ? el('button', { class: 'btn-second pp-petit-btn', type: 'button', onclick: function () { enEdition = null; afficher(); } }, ['Annuler la modification']) : null
-          ]),
-          el('div', { class: 'champ' }, [el('label', { for: 'pp-op' }, ['Opérateur']), selOp]),
-          champAutre,
-          el('div', { class: 'pp-deux' }, champsCompteurs),
-          t && t.tonnage ? el('div', { class: 'champ' }, [el('label', { for: 'pp-t' }, ['Tonnage traité (T) — compteur cumulé, facultatif']), inT]) : null,
-          el('p', { class: 'petit pp-aide' }, [aide]),
-          el('div', { class: 'champ' }, [el('label', {}, ['Pièces remplacées']), pieces]),
-          el('div', { class: 'champ' }, [el('label', { for: 'pp-com' }, ['Commentaire (facultatif)']), inCom]),
-          btn, msg, ok
+          el('div', { class: 'pp-actions-tete' }, [
+            el('button', { class: 'pp-ajout', type: 'button', title: 'Nouvelle intervention', 'aria-label': 'Nouvelle intervention',
+              html: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.6 17.2a1.6 1.6 0 0 0 2.2 2.2l5.7-5.7a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.1-.5-.5-2.1z"/><path d="M19 14v6M16 17h6"/></svg>',
+              onclick: function () { ouvrirFormulaire(E, e, null); } }),
+            el('span', { class: 'pp-badge' }, [t ? t.label : e.type])
+          ])
         ]));
 
         /* courbes : heures / tonnes entre chaque intervention */
@@ -348,7 +259,7 @@
             el('td', { class: 'pp-com-cell' }, [x.commentaire || '—']),
             el('td', { class: 'pp-actions' }, [
               el('button', { class: 'pp-icone', type: 'button', title: 'Modifier', 'aria-label': 'Modifier', onclick: function () {
-                enEdition = x.id; afficher(); var f = vue.querySelector('.pp-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                ouvrirFormulaire(E, e, x);
               } }, ['✎']),
               el('button', { class: 'pp-icone pp-danger', type: 'button', title: 'Supprimer', 'aria-label': 'Supprimer', onclick: function () { ouvrirSuppression(t, x); } }, ['🗑'])
             ]));
@@ -414,6 +325,94 @@
         ].concat(contenu)));
         document.body.appendChild(fond);
         return fermer;
+      }
+
+      /* ---------- fenêtre « Nouvelle intervention » / modification ---------- */
+      function ouvrirFormulaire(E, e, iv) {
+        var t = E.typeIndex[e.type];
+        var operateurs = E.operateurs;
+        var selOp = el('select', { id: 'pp-op' }, operateurs.map(function (o) { return el('option', { value: o }, [o]); }).concat([el('option', { value: '__autre__' }, ['Autre…'])]));
+        var inAutre = el('input', { id: 'pp-autre', type: 'text', placeholder: 'Nom' });
+        var champAutre = el('div', { class: 'champ', hidden: 'hidden' }, [el('label', { for: 'pp-autre' }, ['Nom de l’opérateur']), inAutre]);
+        var inDate = el('input', { id: 'pp-date', type: 'date' });
+        var inH = el('input', { id: 'pp-h', type: 'text', inputmode: 'decimal', placeholder: 'vide si non relevé', autocomplete: 'off' });
+        var inT = el('input', { id: 'pp-t', type: 'text', inputmode: 'decimal', placeholder: 'vide si non relevé', autocomplete: 'off' });
+        var inCom = el('textarea', { id: 'pp-com', rows: '2', placeholder: 'Observations, référence pièce, etc.' });
+        var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
+
+        var dernierOp = PM.Prefs.get('pompes_operateur', '');
+        if (iv) {
+          if (operateurs.indexOf(iv.operateur) >= 0) selOp.value = iv.operateur;
+          else { selOp.value = '__autre__'; inAutre.value = iv.operateur || ''; champAutre.hidden = false; }
+          inDate.value = iv.date || '';
+          inH.value = iv.horametre === null ? '' : String(iv.horametre).replace('.', ',');
+          inT.value = iv.tonnage === null ? '' : String(iv.tonnage).replace('.', ',');
+          inCom.value = iv.commentaire || '';
+        } else {
+          if (operateurs.indexOf(dernierOp) >= 0) selOp.value = dernierOp;
+          inDate.value = aujourdhui();
+        }
+        selOp.addEventListener('change', function () { champAutre.hidden = selOp.value !== '__autre__'; });
+
+        var liste = interventionsDe(E, e.id);
+        var der = liste[liste.length - 1];
+        var aide = iv ? 'Vous modifiez une intervention déjà enregistrée. Les compteurs saisis restent des relevés cumulés.'
+          : ((e.horametre === null && e.tonnage === null) ? 'Aucun relevé de compteur enregistré — les compteurs sont facultatifs.'
+            : 'Dernier relevé connu : ' + fmtH(e.horametre) + (t && t.tonnage ? ' · ' + fmtT(e.tonnage) : '') + '.')
+            + (der ? ' Dernière intervention : ' + fmtDateFR(der.date) + '.' : '');
+
+        var pieces = el('div', { class: 'pp-pieces' });
+        (t ? t.pieces : []).forEach(function (p) {
+          var cb = el('input', { type: 'checkbox', value: p.id, checked: iv && iv.pieces.indexOf(p.id) >= 0 ? 'checked' : null });
+          var chip = el('label', { class: 'pp-piece' + (cb.checked ? ' coche' : '') }, [cb, el('span', {}, [p.label])]);
+          cb.addEventListener('change', function () { chip.classList.toggle('coche', cb.checked); });
+          pieces.appendChild(chip);
+        });
+
+        var btn = el('button', { class: 'btn-principal', type: 'button' }, [iv ? 'Enregistrer les modifications' : 'Enregistrer l’intervention']);
+        btn.addEventListener('click', function () {
+          msg.hidden = true;
+          function erreur(txt) { msg.textContent = txt; msg.hidden = false; }
+          var operateur = selOp.value === '__autre__' ? inAutre.value.trim() : selOp.value;
+          if (!operateur) return erreur('Veuillez indiquer l’opérateur.');
+          if (!inDate.value) return erreur('Veuillez indiquer une date.');
+          var h = nombre(inH.value);
+          if (h !== '' && isNaN(h)) return erreur('Compteur horaire invalide — laissez le champ vide s’il n’a pas été relevé.');
+          if (!iv && h !== '' && e.horametre !== null && h < e.horametre &&
+            !window.confirm('Le compteur saisi (' + h + ' h) est inférieur au dernier relevé (' + e.horametre + ' h). Continuer quand même ?')) return;
+          var to = '';
+          if (t && t.tonnage) {
+            to = nombre(inT.value);
+            if (to !== '' && isNaN(to)) return erreur('Tonnage invalide — laissez le champ vide s’il n’a pas été relevé.');
+            if (!iv && to !== '' && e.tonnage !== null && to < e.tonnage &&
+              !window.confirm('Le tonnage saisi (' + to + ' T) est inférieur au dernier relevé (' + e.tonnage + ' T). Continuer quand même ?')) return;
+          }
+          var choix = Array.prototype.map.call(pieces.querySelectorAll('input:checked'), function (c) { return c.value; });
+          var donnees = { operateur: operateur, date: inDate.value, horametre: h, tonnage: to, pieces: choix, commentaire: inCom.value.trim() };
+          if (iv) { donnees.type = 'pompes.modification'; donnees.interventionId = iv.id; }
+          else { donnees.type = 'pompes.intervention'; donnees.interventionId = PM.uid() + PM.uid(); donnees.equipementId = e.id; }
+          if (navigator.vibrate) navigator.vibrate(25);
+          if (operateurs.indexOf(operateur) >= 0) PM.Prefs.set('pompes_operateur', operateur);
+          saisir(donnees);
+          var texte = iv ? 'Intervention modifiée.' : 'Intervention enregistrée.';
+          fermer();
+          afficher();
+          PM.toast(texte + (modeDemo || navigator.onLine ? '' : ' Envoi dès le retour du réseau.'));
+        });
+
+        var champsCompteurs = [el('div', { class: 'champ' }, [el('label', { for: 'pp-date' }, ['Date']), inDate]),
+          el('div', { class: 'champ' }, [el('label', { for: 'pp-h' }, ['Compteur horaire (h) — facultatif']), inH])];
+        var fermer = modale(iv ? 'Modifier l’intervention du ' + fmtDateFR(iv.date) : 'Nouvelle intervention', e.nom, [el('div', { class: 'pp-form' }, [
+          el('div', { class: 'champ', style: 'margin-top:12px' }, [el('label', { for: 'pp-op' }, ['Opérateur']), selOp]),
+          champAutre,
+          el('div', { class: 'pp-deux' }, champsCompteurs),
+          t && t.tonnage ? el('div', { class: 'champ' }, [el('label', { for: 'pp-t' }, ['Tonnage traité (T) — compteur cumulé, facultatif']), inT]) : null,
+          el('p', { class: 'petit pp-aide' }, [aide]),
+          el('div', { class: 'champ' }, [el('label', {}, ['Pièces remplacées']), pieces]),
+          el('div', { class: 'champ' }, [el('label', { for: 'pp-com' }, ['Commentaire (facultatif)']), inCom]),
+          btn, msg
+        ])]);
+
       }
 
       /* ---------- bouton HRS : relevé du compteur horaire actuel ---------- */

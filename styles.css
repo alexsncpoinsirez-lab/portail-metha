@@ -885,3 +885,11 @@ body.futur .pp-ecoule b { color: var(--neon); font-family: var(--mono); }
 .pp-carte-titre .pp-badge { white-space: normal; max-width: 100%; line-height: 1.3; }
 .pp-barre .pp-detail-nom { flex: 1 1 100%; order: 2; font-size: 18px; gap: 8px; }
 .pp-barre > .pp-badge { margin-left: auto; }
+/* bouton « nouvelle intervention » à gauche du type de matériel */
+.pp-barre > .pp-actions-tete { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.pp-ajout { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); }
+.pp-ajout:active { transform: scale(.95); }
+body.futur .pp-ajout { color: var(--neon); background: color-mix(in srgb, var(--neon) 12%, transparent); border-color: color-mix(in srgb, var(--neon) 45%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--neon) 22%, transparent); }
+.ag-modale-boite .pp-form textarea { width: 100%; }
