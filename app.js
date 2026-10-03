@@ -208,6 +208,7 @@
     thermo: '<path d="M10 14.5V5a2 2 0 1 1 4 0v9.5a4 4 0 1 1-4 0zM12 9v7"/>',
     filtre: '<path d="M4 5h16l-6 7v6l-4 2v-8z"/>',
     agitation: '<path d="M12 3v18M12 12c-4 0-6-2-7-4M12 12c4 0 6 2 7 4M5 21h14"/>',
+    pompe: '<circle cx="10" cy="13" r="5.5"/><circle cx="10" cy="13" r="1.6"/><path d="M14 8.5h6v4M4.5 21h11M10 18.5V21"/>',
     document: '<path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6"/>',
     site: '<path d="M3 21h18M5 21V10l5-3v14M10 21V5l9 4v12M13 11h3M13 15h3"/>',
     fleche: '<path d="M9 5l7 7-7 7"/>'
