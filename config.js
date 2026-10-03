@@ -28,16 +28,9 @@ var PORTAIL_CONFIG = {
           type: 'interne',
           module: 'rondes'
         },
-        {
-          id: 'analyses-rotte',
-          nom: 'Analyses digestat',
-          description: 'Résultats Novatech AOV / TAC / MS',
-          icone: 'analyse',
-          type: 'lien',
-          url: 'https://script.google.com/macros/s/AKfycbybpUlEFv5QXIk4iHkDgwkcRenaJTWH48IH2XUXdxbWtQeh0mntNLlUf_YOjANeGtBc/exec'
-        },
+        { id: 'analyses-rotte', nom: 'Analyses digestat', description: 'Résultats Novatech AOV / TAC / MS — Rotte', icone: 'analyse', type: 'interne', module: 'analyses' },
         { id: 'bougies',   nom: 'Suivi Bougies',     description: 'Tension des 12 bougies du moteur de cogénération', icone: 'bougie', type: 'interne', module: 'bougies' },
-        { id: 'agitation', nom: 'Hauteur agitation', description: 'Suivi hauteur des agitateurs',      icone: 'agitation', type: 'lien', url: 'https://script.google.com/macros/s/AKfycbyFfo3Zi9Fa4mtEk7ZcwS6kP_9kD-PEJ_80l8PsMflwNk5yj_mh5e4RjnieBIf68Jbn/exec' }
+        { id: 'agitation', nom: 'Hauteur agitation', description: 'Hauteur des hélices des agitateurs (tours / mètres)', icone: 'agitation', type: 'interne', module: 'agitation' }
       ]
     },
     {
@@ -57,7 +50,7 @@ var PORTAIL_CONFIG = {
           url: 'https://docs.google.com/forms/d/1_xC0e7xDNlrgE_1ww5FNLta0KF4CEoR1YNwzTqzgJMQ/viewform'
         },
         { id: 'nh3',         nom: 'Suivi NH3',            description: 'Analyses NH3 et charbon actif',      icone: 'filtre',      type: 'interne', module: 'nh3' },
-        { id: 'analyses-arr',nom: 'Analyses digestat',    description: 'Résultats Novatech AOV / TAC / MS',  icone: 'analyse',     type: 'lien', url: 'https://script.google.com/macros/s/AKfycbybpUlEFv5QXIk4iHkDgwkcRenaJTWH48IH2XUXdxbWtQeh0mntNLlUf_YOjANeGtBc/exec' }
+        { id: 'analyses-arr', nom: 'Analyses digestat', description: 'Résultats Novatech AOV / TAC / MS — Arraincourt', icone: 'analyse', type: 'interne', module: 'analyses' }
       ]
     }
   ],
