@@ -21,7 +21,7 @@ var PORTAIL_CONFIG = {
       // SÉCURITÉ : coller ici l'adresse /exec du serveur du site. Une fois remplie, elle est
       // utilisée sur TOUS les téléphones et un lien de configuration ne peut plus la changer
       // (il n'apporte plus que la clé). Vide = adresse à saisir dans Réglages.
-      apiUrl: '',
+      apiUrl: 'https://script.google.com/macros/s/AKfycbyBXfDFzyIUcc2DepkrldDLKmVyswz1gTgRB8FbumV5--XH2E5_BiAEAX4qxpkPoMm5/exec',
       outils: [
         {
           id: 'rondes-rotte',
@@ -43,7 +43,7 @@ var PORTAIL_CONFIG = {
       sousTitre: 'Univers Arraincourt Biogaz',
       couleur: '#1f5f8b',
       neon: '#38b6ff',
-      apiUrl: '',           // adresse /exec du serveur Arraincourt (voir explication au-dessus)
+      apiUrl: 'https://script.google.com/macros/s/AKfycbzWi9pWu4hhTwIY0nXzHRE3ywgXUsCMcona7Uhim8pcSkb2BUtBA0BFrmzDc5zr3L0Twg/exec', // serveur Arraincourt
       outils: [
         {
           id: 'ronde-arraincourt',
