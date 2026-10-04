@@ -59,8 +59,8 @@
     return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   }
   function nombre(v) {
-    if (String(v).trim() === '') return '';
-    var n = parseFloat(String(v).replace(',', '.'));
+    var n = PM.nombre(v); // « 21 300 » = 21300, « 12abc » refusé
+    if (n === null) return '';
     return isNaN(n) || n < 0 ? NaN : n;
   }
 

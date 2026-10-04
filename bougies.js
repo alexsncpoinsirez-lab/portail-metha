@@ -32,7 +32,7 @@
   }
 
   /* ---------- outils ---------- */
-  function nb(x) { if (x === '' || x === null || x === undefined) return null; var n = parseFloat(String(x).replace(',', '.').trim()); return isNaN(n) ? null : n; }
+  function nb(x) { var n = PM.nombre(x); return n === null || isNaN(n) ? null : n; } // « 21 300 » = 21300, « 12abc » refusé
   function fmt(n) { return Number(n).toLocaleString('fr-FR', { maximumFractionDigits: 1 }); }
   function fmtDate(s) { var d = new Date(s); return isNaN(d) ? '' : d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }); }
   function fmtDateHeure(s) {
@@ -473,13 +473,15 @@
       function blocApiOuvert(cfg) {
         var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
         var tel = el('input', { id: 'p-tel', type: 'text', value: cfg.textMeBotDestinataire || '', autocomplete: 'off' });
-        var key = el('input', { id: 'p-apikey', type: 'text', value: cfg.textMeBotApiKey || '', autocomplete: 'off' });
+        // La clé n'est plus renvoyée par le serveur : champ vide = on garde la clé actuelle
+        var key = el('input', { id: 'p-apikey', type: 'password', value: '', autocomplete: 'off',
+          placeholder: cfg.apiKeyConfiguree ? 'Clé enregistrée (…' + (cfg.apiKeyFin || '') + ') — laisser vide pour la garder' : 'Clé API TextMeBot' });
         var btnEnr = el('button', { class: 'btn-principal', type: 'button' }, ['Enregistrer la config API']);
         var btnTest = el('button', { class: 'btn-second', type: 'button' }, ['Envoyer un test WhatsApp']);
         btnEnr.addEventListener('click', function () {
           msg.hidden = true;
           appelDirect({ action: 'bougies.enregistrerConfigApi', code: codeApiValide, destinataire: tel.value.trim(), apiKey: key.value.trim() }, btnEnr)
-            .then(function () { D.parametres.apiConfiguree = !!(tel.value.trim() && key.value.trim()); PM.DB.set(CLE_DONNEES, D); PM.toast('Configuration API enregistrée.'); })
+            .then(function () { D.parametres.apiConfiguree = !!(tel.value.trim() && (key.value.trim() || cfg.apiKeyConfiguree)); if (key.value.trim()) { cfg.apiKeyConfiguree = true; cfg.apiKeyFin = key.value.trim().slice(-4); key.value = ''; key.placeholder = 'Clé enregistrée (…' + cfg.apiKeyFin + ') — laisser vide pour la garder'; } PM.DB.set(CLE_DONNEES, D); PM.toast('Configuration API enregistrée.'); })
             ['catch'](function (e) { montrer(msg, e.message); });
         });
         btnTest.addEventListener('click', function () { tester('whatsapp', btnTest, msg); });

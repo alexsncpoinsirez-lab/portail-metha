@@ -96,7 +96,7 @@
   }
   function fmtVal(v) { return (Math.round(v * 10) / 10).toLocaleString('fr-FR', { maximumFractionDigits: 1 }); }
   function fmtKg(v) { return Math.round(v).toLocaleString('fr-FR'); }
-  function nb(x) { if (x === '' || x === null || x === undefined) return null; var n = parseFloat(String(x).replace(',', '.')); return isNaN(n) ? null : n; }
+  function nb(x) { var n = PM.nombre(x); return n === null || isNaN(n) ? null : n; } // « 21 300 » = 21300, « 12abc » refusé
   function svgEl(tag, attrs) { var e = document.createElementNS(NS, tag); for (var k in attrs) if (attrs[k] !== null && attrs[k] !== undefined) e.setAttribute(k, attrs[k]); return e; }
   function maintenantLocal() { var n = new Date(); return n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate()) + 'T' + pad(n.getHours()) + ':' + pad(n.getMinutes()); }
   function determinerCuve1(mouvements, force) {

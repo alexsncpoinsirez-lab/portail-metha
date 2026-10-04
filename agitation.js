@@ -274,8 +274,8 @@
         var fermerBtn = el('button', { type: 'button', class: 'ag-fermer', 'aria-label': 'Fermer' }, ['×']);
 
         function nouveauxTours() {
-          var raw = parseFloat(String(input.value).replace(',', '.'));
-          if (isNaN(raw)) return null;
+          var raw = PM.nombre(input.value);
+          if (raw === null || isNaN(raw)) return null;
           raw = Math.abs(raw);
           return Math.max(0, mode === 'delta' ? st.tours + signe * raw : raw);
         }
@@ -306,7 +306,7 @@
           if (!selOp.value) { msg.textContent = 'Choisis un opérateur.'; msg.hidden = false; return; }
           var n = nouveauxTours();
           if (n === null) { msg.textContent = 'Saisis une valeur valide.'; msg.hidden = false; return; }
-          var raw = Math.abs(parseFloat(String(input.value).replace(',', '.')));
+          var raw = Math.abs(PM.nombre(input.value));
           var valeur = mode === 'delta' ? signe * raw : raw;
           if (navigator.vibrate) navigator.vibrate(25);
           PM.Prefs.set('agitation_operateur', selOp.value);

@@ -25,6 +25,15 @@
     return n;
   }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  /* Lecture d'un nombre saisi : « 21 300 », « 77967,8 », « 1.5 ».
+     Renvoie null si vide, NaN si ce n'est pas un nombre (« 12abc » est refusé). */
+  function nombre(x) {
+    if (x === null || x === undefined) return null;
+    if (typeof x === 'number') return isFinite(x) ? x : NaN;
+    var t = String(x).replace(/[\s\u00a0\u202f']/g, '').replace(',', '.');
+    if (t === '') return null;
+    return /^[-+]?(\d+\.?\d*|\.\d+)$/.test(t) ? parseFloat(t) : NaN;
+  }
 
   var toastTimer;
   function toast(msg, duree) {
@@ -97,6 +106,11 @@
           return { result: Object.keys(memoire.outbox).map(function (k) { return memoire.outbox[k]; }) };
         });
       },
+      majEnvoi: function (item) {
+        return tx('outbox', 'readwrite', function (s) { if (s) s.put(item); else memoire.outbox[item.seq] = item; });
+      },
+      // false si le téléphone n'a pas de stockage durable (navigation privée…) : les saisies seraient perdues à la fermeture
+      durable: function () { return ouvrir().then(function (db) { return !!db; }); },
       supprimerEnvoi: function (seqId) {
         return tx('outbox', 'readwrite', function (s) { if (s) s['delete'](seqId); else delete memoire.outbox[seqId]; });
       }
@@ -116,75 +130,154 @@
         body: JSON.stringify(corps),
         redirect: 'follow',
         signal: ctrl ? ctrl.signal : undefined
+      })['catch'](function (e) {
+        if (timer) clearTimeout(timer);
+        if (e && e.name === 'AbortError') throw new Error('Pas de réponse du serveur (délai dépassé)');
+        throw new Error('Réseau indisponible ou serveur injoignable');
       }).then(function (r) {
         if (timer) clearTimeout(timer);
         if (!r.ok) throw new Error('Serveur : code ' + r.status);
         return r.json();
       }).then(function (j) {
-        if (!j || j.ok !== true) throw new Error((j && j.erreur) || 'Réponse invalide du serveur');
+        if (!j || j.ok !== true) { var err = new Error((j && j.erreur) || 'Réponse invalide du serveur'); err.serveur = true; throw err; }
         return j;
       });
     }
   };
 
-  /* ---------- File d'attente d'envoi (hors ligne) ---------- */
+  /* ---------- File d'attente d'envoi (hors ligne) ----------
+     - une saisie n'est retirée du téléphone QUE si le serveur l'a acceptée ;
+     - une saisie refusée par le serveur est mise de côté (Réglages → Saisies refusées),
+       elle ne bloque plus les suivantes ni l'autre site ;
+     - un serveur en panne ne bloque pas l'envoi vers l'autre site. */
+  var numeroEcran = 0; // augmente à chaque changement d'écran (voir router)
   var Envoi = (function () {
     var enCours = false;
     var ecouteurs = [];
+    var erreurs = {}; // dernière erreur par site
+    function etat(l) {
+      l = l || [];
+      var refusees = l.filter(function (x) { return x.rejete; }).length;
+      return { attente: l.length - refusees, refusees: refusees };
+    }
     function notifier() {
       return DB.listerEnvois().then(function (l) {
-        var n = (l || []).length;
-        majEtatSync(n);
-        ecouteurs.forEach(function (f) { try { f(n); } catch (e) {} });
-        return n;
+        var e = etat(l);
+        majEtatSync(e.attente, e.refusees);
+        ecouteurs = ecouteurs.filter(function (f) { return f.__ecran === numeroEcran; }); // écrans fermés : oubliés
+        ecouteurs.forEach(function (f) { try { f(e.attente); } catch (x) {} });
+        return e.attente;
+      });
+    }
+    // Lot : saisies qui se suivent pour un même site (sans mélanger l'ordre), 25 max ; une photo part seule.
+    function preparerLot(liste, siteId) {
+      var dusite = liste.filter(function (x) { return !x.rejete && x.siteId === siteId; });
+      var premier = dusite[0];
+      if (premier.photo || premier.seul) return [premier];
+      var lot = [premier];
+      for (var i = 1; i < dusite.length && lot.length < 25; i++) {
+        if (dusite[i].photo || dusite[i].seul) break;
+        lot.push(dusite[i]);
+      }
+      return lot;
+    }
+    function envoyerLot(lot) {
+      var siteId = lot[0].siteId;
+      var avecPhoto = lot.some(function (x) { return x.photo; });
+      return Api.appeler(apiSite(siteId), {
+        action: 'enregistrer',
+        cle: cleSite(siteId),
+        items: lot.map(function (x) { return x.payload; })
+      }, avecPhoto ? 90000 : 60000).then(function (j) {
+        delete erreurs[siteId];
+        var rejets = {}, restants = {};
+        (j.rejets || []).forEach(function (r) { if (r && r.id) rejets[r.id] = r.erreur || 'Refusée par le serveur'; });
+        (j.restants || []).forEach(function (id) { restants[id] = true; });
+        var nbRefus = 0;
+        return Promise.all(lot.map(function (x) {
+          var id = x.payload && x.payload.id;
+          if (id && rejets[id]) { nbRefus++; x.rejete = true; x.erreur = rejets[id]; x.quand = Date.now(); return DB.majEnvoi(x); }
+          if (id && restants[id]) return null; // le serveur n'a pas eu le temps : renvoyée au prochain passage
+          return DB.supprimerEnvoi(x.seq);
+        })).then(function () {
+          if (nbRefus) toast('⚠ ' + nbRefus + ' saisie' + (nbRefus > 1 ? 's refusées' : ' refusée') + ' par le serveur — voir Réglages', 5000);
+          return true;
+        });
+      }, function (e) {
+        var msg = (e && e.message) || 'Erreur inconnue';
+        erreurs[siteId] = { message: msg, quand: Date.now() };
+        console.warn('Envoi différé (' + siteId + ') :', msg);
+        if (!e || !e.serveur || /cl[ée] du site/i.test(msg)) return 'site'; // réseau ou clé : on réessaiera tel quel
+        // Le serveur a répondu une erreur pour tout le lot : on isole la saisie fautive
+        if (lot.length > 1) {
+          return Promise.all(lot.map(function (x) { x.seul = true; return DB.majEnvoi(x); })).then(function () { return 'lot'; });
+        }
+        var x = lot[0];
+        x.seul = true;
+        x.essais = (x.essais || 0) + 1;
+        if (x.essais >= 3) { x.rejete = true; x.erreur = msg; x.quand = Date.now(); toast('⚠ Une saisie est refusée par le serveur — voir Réglages', 5000); }
+        return DB.majEnvoi(x).then(function () { return 'saisie'; });
       });
     }
     function vider() {
       if (enCours || !navigator.onLine) return notifier();
       enCours = true;
-      return DB.listerEnvois().then(function (liste) {
-        liste = liste || [];
-        if (!liste.length) return;
-        // Regroupe les saisies sans photo (25 max) ; une photo part seule.
-        var premier = liste[0];
-        var lot = [premier];
-        if (!premier.photo) {
-          for (var i = 1; i < liste.length && lot.length < 25; i++) {
-            if (liste[i].photo || liste[i].siteId !== premier.siteId) break;
-            lot.push(liste[i]);
-          }
-        }
-        return Api.appeler(apiSite(premier.siteId), {
-          action: 'enregistrer',
-          cle: cleSite(premier.siteId),
-          items: lot.map(function (x) { return x.payload; })
-        }).then(function () {
-          return Promise.all(lot.map(function (x) { return DB.supprimerEnvoi(x.seq); }));
-        }).then(function () {
-          enCours = false;
-          return vider();
+      var sitesEnPanne = {}, dejaTentees = {}, tours = 0;
+      function suivant() {
+        if (++tours > 200) return; // sécurité
+        return DB.listerEnvois().then(function (liste) {
+          liste = (liste || []).filter(function (x) { return !x.rejete && !dejaTentees[x.seq]; });
+          var aFaire = liste.filter(function (x) { return !sitesEnPanne[x.siteId]; });
+          if (!aFaire.length) return;
+          var lot = preparerLot(liste, aFaire[0].siteId);
+          return envoyerLot(lot).then(function (r) {
+            if (r === 'site') sitesEnPanne[lot[0].siteId] = true;         // serveur injoignable : on passe à l'autre site
+            else if (r === 'saisie') dejaTentees[lot[0].seq] = true;      // saisie fautive : on passe aux suivantes
+            return suivant();                                              // 'lot' : renvoi une par une tout de suite
+          });
         });
-      })['catch'](function (e) {
-        console.warn('Envoi différé :', e && e.message);
-        Envoi.derniereErreur = e && e.message;
-      }).then(function () { enCours = false; return notifier(); });
+      }
+      return suivant()['catch'](function (e) { console.warn('File d’envoi :', e && e.message); })
+        .then(function () { enCours = false; return notifier(); });
     }
     return {
       // siteId : la saisie part vers le serveur de CE site uniquement
       ajouter: function (siteId, payload, photo) {
         payload.id = payload.id || uid();
         return DB.ajouterEnvoi({ siteId: siteId, payload: payload, photo: !!photo, cree: Date.now() })
-          .then(function () { vider(); return payload.id; });
+          .then(function () { vider(); return payload.id; }, function (e) {
+            toast('⚠ Impossible d’enregistrer la saisie sur ce téléphone (mémoire pleine ?). Réessaie.', 6000);
+            throw e;
+          });
       },
       vider: vider,
       compter: notifier,
-      surChangement: function (f) { ecouteurs.push(f); }
+      // l'écouteur est oublié dès qu'on change d'écran (évite qu'ils s'empilent)
+      surChangement: function (f) { f.__ecran = numeroEcran; ecouteurs.push(f); },
+      erreurs: function () { return erreurs; },
+      refusees: function () { return DB.listerEnvois().then(function (l) { return (l || []).filter(function (x) { return x.rejete; }); }); },
+      renvoyer: function (x) { delete x.rejete; delete x.erreur; x.essais = 0; x.seul = true; return DB.majEnvoi(x).then(vider); },
+      abandonner: function (x) { return DB.supprimerEnvoi(x.seq).then(notifier); }
     };
   })();
+  Object.defineProperty(Envoi, 'derniereErreur', { get: function () {
+    var e = Envoi.erreurs(), k = Object.keys(e);
+    return k.length ? e[k[0]].message : null;
+  } });
 
-  function majEtatSync(nAttente) {
+  function majEtatSync(nAttente, nRefusees) {
     var e = $('#etatSync');
     e.classList.remove('horsligne', 'attente');
+    e.title = Envoi.derniereErreur ? 'Dernière erreur d’envoi : ' + Envoi.derniereErreur : '';
+    if (nRefusees) {
+      e.classList.add('attente');
+      e.textContent = '⚠ ' + nRefusees + ' refusée' + (nRefusees > 1 ? 's' : '');
+      e.title = (nAttente ? nAttente + ' à envoyer. ' : '') + 'Toucher pour voir les saisies refusées.';
+      e.style.cursor = 'pointer';
+      e.onclick = function () { location.hash = 'reglages'; };
+      return;
+    }
+    e.onclick = null; e.style.cursor = '';
     if (!navigator.onLine) {
       e.classList.add('horsligne');
       e.textContent = nAttente ? 'Hors ligne · ' + nAttente + ' en attente' : 'Hors ligne';
@@ -235,10 +328,14 @@
     return null;
   }
   /* Un serveur Apps Script PAR SITE : adresse + clé propres à chaque site */
+  // Si l'adresse est écrite dans config.js, c'est TOUJOURS elle qui est utilisée :
+  // un lien de configuration piégé ne peut pas détourner les saisies vers un autre serveur.
   function apiSite(siteId) {
     var s = site(siteId) || {};
-    return Prefs.get('api_site_' + siteId, '') || s.apiUrl || '';
+    return s.apiUrl || Prefs.get('api_site_' + siteId, '') || '';
   }
+  var RE_EXEC = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}\/exec$/;
+  function urlCourte(u) { var m = /\/s\/([^/]+)\/exec/.exec(u || ''); return m ? '…' + m[1].slice(-8) : (u || '—'); }
   function cleSite(siteId) { return Prefs.get('cle_site_' + siteId, ''); }
   // Reprise automatique des réglages de la v1 (réglés par outil)
   (function migrerReglagesV1() {
@@ -367,7 +464,8 @@
     if (!data.length) return '';
     return location.origin + location.pathname.replace(/index\.html$/, '') + '#config/' + b64urlEncode(JSON.stringify(data));
   }
-  // Lit un lien (ou juste la partie après #config/) et enregistre les réglages. Renvoie les noms des sites configurés.
+  // Lit un lien (ou juste la partie après #config/) et enregistre les réglages APRÈS confirmation.
+  // Renvoie les noms des sites configurés.
   function appliquerConfig(texte) {
     var code = String(texte || '').trim();
     var pos = code.indexOf('#config/');
@@ -375,17 +473,35 @@
     else code = code.replace(/^#?config\//, '');
     var data;
     try { data = JSON.parse(b64urlDecode(code)); } catch (e) { throw new Error('Lien de configuration invalide.'); }
-    var noms = [];
+    var aRegler = [], lignes = [], alerte = false;
     (Array.isArray(data) ? data : [data]).forEach(function (d) {
-      var s = site(d.i);
-      if (!s || !d.u || !/^https:\/\/script\.google(usercontent)?\.com\//.test(d.u)) return;
-      Prefs.set('api_site_' + s.id, d.u);
-      Prefs.set('cle_site_' + s.id, d.k || '');
-      noms.push(s.nom);
+      var s = d && site(d.i);
+      if (!s || !d.k) return;
+      var u;
+      if (s.apiUrl) {
+        // adresse figée dans l'appli : le lien ne peut apporter que la clé
+        if (d.u && d.u !== s.apiUrl) { alerte = true; lignes.push('⚠ ' + s.nom + ' : le lien indique un AUTRE serveur que celui de l’appli → ignoré'); return; }
+        u = s.apiUrl;
+      } else {
+        if (!d.u || !RE_EXEC.test(d.u)) return;
+        u = d.u;
+        var actuel = Prefs.get('api_site_' + s.id, '');
+        if (actuel && actuel !== u) { alerte = true; lignes.push('⚠ ' + s.nom + ' : REMPLACE le serveur actuel (' + urlCourte(actuel) + ') par ' + urlCourte(u)); }
+        else lignes.push('• ' + s.nom + ' : serveur ' + urlCourte(u));
+      }
+      if (s.apiUrl) lignes.push('• ' + s.nom + ' : clé du site');
+      aRegler.push({ s: s, u: u, k: String(d.k) });
     });
-    if (!noms.length) throw new Error('Lien de configuration invalide.');
+    if (!aRegler.length) throw new Error(lignes.length ? lignes.join('\n') : 'Lien de configuration invalide.');
+    var ok = window.confirm('Régler le portail avec ce lien ?\n\n' + lignes.join('\n') +
+      '\n\nN’accepte que si le lien vient de quelqu’un de l’équipe' + (alerte ? ' — en cas de doute, refuse et demande à Alex.' : '.'));
+    if (!ok) throw new Error('Configuration annulée.');
+    aRegler.forEach(function (r) {
+      if (!r.s.apiUrl) Prefs.set('api_site_' + r.s.id, r.u);
+      Prefs.set('cle_site_' + r.s.id, r.k);
+    });
     Envoi.vider();
-    return noms;
+    return aRegler.map(function (r) { return r.s.nom; });
   }
   function partagerLien(lien, titre, zone) {
     if (!lien) { toast('Renseigne d’abord le serveur et la clé, puis « Enregistrer et tester ».'); return; }
@@ -399,14 +515,62 @@
     } else champ.select();
   }
 
+  /* Bloc « Envois » : saisies en attente, refusées, dernière erreur par site */
+  function blocEnvois() {
+    var bloc = el('div', { class: 'bandeau', id: 'blocEnvois' }, [el('div', { style: 'font-weight:700;margin-bottom:6px' }, ['Envois'])]);
+    var corps = el('div');
+    bloc.appendChild(corps);
+    function remplir() {
+      DB.listerEnvois().then(function (l) {
+        l = l || [];
+        corps.innerHTML = '';
+        var attente = l.filter(function (x) { return !x.rejete; }).length;
+        var refusees = l.filter(function (x) { return x.rejete; });
+        corps.appendChild(el('p', { class: 'petit' }, [attente ? attente + ' saisie' + (attente > 1 ? 's' : '') + ' en attente d’envoi.' : 'Aucune saisie en attente.']));
+        var errs = Envoi.erreurs();
+        Object.keys(errs).forEach(function (id) {
+          var s = site(id);
+          corps.appendChild(el('p', { class: 'petit', style: 'color:#e8a33d' }, ['⚠ ' + (s ? s.nom : id) + ' : ' + errs[id].message + ' (' + new Date(errs[id].quand).toLocaleTimeString('fr-FR') + ')']));
+        });
+        DB.durable().then(function (ok) {
+          if (!ok) corps.appendChild(el('p', { class: 'petit', style: 'color:#ff6b6b' }, ['⚠ Ce téléphone ne garde pas les saisies en mémoire (navigation privée ?) : elles seront perdues si l’appli est fermée avant l’envoi.']));
+        });
+        if (attente) corps.appendChild(el('button', { class: 'btn-second', onclick: function () { toast('Envoi…'); Envoi.vider().then(remplir); } }, ['Envoyer maintenant']));
+        if (!refusees.length) return;
+        corps.appendChild(el('p', { class: 'petit', style: 'margin-top:10px;font-weight:700' }, ['Saisies refusées par le serveur (' + refusees.length + ')']));
+        refusees.forEach(function (x) {
+          var s = site(x.siteId), p = x.payload || {};
+          var NOMS = { reponse: 'Ronde', finRonde: 'Fin de ronde', message: 'Message', nh3: 'Suivi NH3', bougies: 'Suivi Bougies', agitation: 'Hauteur agitation', pompes: 'Suivi des pompes' };
+          var t = String(p.type || '?');
+          var quoi = (NOMS[t] || NOMS[t.split('.')[0]] || t) + (t.indexOf('.') > 0 ? ' (' + t.split('.')[1] + ')' : '') + (p.libelle ? ' · ' + p.libelle : '') + (p.zone ? ' — ' + p.zone : '');
+          corps.appendChild(el('div', { class: 'champ', style: 'border-left:3px solid #e8a33d;padding-left:8px;margin:8px 0' }, [
+            el('div', { class: 'petit' }, [(s ? s.nom : x.siteId) + ' — ' + new Date(x.cree).toLocaleString('fr-FR')]),
+            el('div', {}, [quoi]),
+            el('div', { class: 'petit', style: 'color:#e8a33d' }, ['Motif : ' + (x.erreur || 'inconnu')]),
+            el('div', { style: 'display:flex;gap:8px;margin-top:6px' }, [
+              el('button', { class: 'btn-second', onclick: function () { Envoi.renvoyer(x).then(remplir); } }, ['Renvoyer']),
+              el('button', { class: 'btn-second', onclick: function () {
+                if (window.confirm('Supprimer définitivement cette saisie du téléphone ?')) Envoi.abandonner(x).then(remplir);
+              } }, ['Supprimer'])
+            ])
+          ]));
+        });
+      });
+    }
+    remplir();
+    return bloc;
+  }
+
   function ecranReglages(vue) {
     entete('Réglages', 'Connexion aux serveurs Apps Script', '#');
+    vue.appendChild(blocEnvois());
     vue.appendChild(el('p', { class: 'petit' }, [
       'Chaque site a son propre serveur. Colle son adresse (se termine par /exec) et sa clé : tous les outils « version rapide » du site s’en servent.'
     ]));
     CFG.sites.forEach(function (s) {
       var rapides = s.outils.filter(function (o) { return o.type === 'interne'; });
       var url = el('input', { type: 'url', value: apiSite(s.id), placeholder: 'https://script.google.com/macros/s/…/exec' });
+      if (s.apiUrl) { url.readOnly = true; url.title = 'Adresse fixée dans l’appli (config.js)'; }
       var cle = el('input', { type: 'text', value: cleSite(s.id), placeholder: 'Clé du site', autocomplete: 'off' });
       var res = el('div', { class: 'petit' });
       var zone = el('div');
@@ -419,14 +583,17 @@
         el('div', { class: 'champ' }, [el('label', {}, ['Clé du site']), cle]),
         el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, [
           el('button', { class: 'btn-second', onclick: function () {
-            Prefs.set('api_site_' + s.id, url.value.trim());
-            Prefs.set('cle_site_' + s.id, cle.value.trim());
-            if (!url.value.trim()) { res.textContent = 'Enregistré (vide)'; return; }
+            var u = url.value.trim(), k = cle.value.trim();
+            if (u && !s.apiUrl && !RE_EXEC.test(u)) { res.textContent = '✗ Adresse invalide : elle doit commencer par https://script.google.com/macros/s/ et finir par /exec'; return; }
+            if (!u) { Prefs.set('api_site_' + s.id, ''); Prefs.set('cle_site_' + s.id, k); res.textContent = 'Enregistré (vide)'; return; }
+            // on teste AVANT d'enregistrer : une faute de frappe n'écrase plus des réglages qui marchaient
             res.textContent = 'Test en cours…';
-            Api.appeler(url.value.trim(), { action: 'ping', cle: cle.value.trim() }, 20000).then(function (j) {
-              res.textContent = '✓ Connecté à « ' + (j.nomSite || 'serveur') + ' »';
+            Api.appeler(u, { action: 'ping', cle: k }, 20000).then(function (j) {
+              if (!s.apiUrl) Prefs.set('api_site_' + s.id, u);
+              Prefs.set('cle_site_' + s.id, k);
+              res.textContent = '✓ Connecté à « ' + (j.nomSite || 'serveur') + ' » — enregistré';
               Envoi.vider();
-            })['catch'](function (e) { res.textContent = '✗ ' + e.message; });
+            })['catch'](function (e) { res.textContent = '✗ ' + e.message + ' — rien n’a été modifié'; });
           } }, ['Enregistrer et tester']),
           el('button', { class: 'btn-second', onclick: function () {
             partagerLien(lienConfig([s.id]), 'Portail Métha — ' + s.nom, zone);
@@ -519,6 +686,7 @@
   /* ---------- Routeur ---------- */
   function router() {
     var h = (location.hash || '').replace(/^#\/?/, '');
+    numeroEcran++;
     var vue = $('#vue');
     vue.innerHTML = '';
     vue.removeAttribute('style');
@@ -528,7 +696,7 @@
       try {
         var noms = appliquerConfig(h);
         toast('Portail configuré : ' + noms.join(', '), 4500);
-      } catch (e) { toast('Lien de configuration invalide.', 4500); }
+      } catch (e) { toast(e.message || 'Lien de configuration invalide.', 4500); }
       history.replaceState(null, '', location.pathname); // la clé ne reste pas dans l'adresse
       p = [''];
     }
@@ -540,10 +708,10 @@
   window.addEventListener('hashchange', router);
   $('#btnReglages').addEventListener('click', function () { location.hash = 'reglages'; });
 
-  var VERSION_APP = '1.4.0';
+  var VERSION_APP = '1.10.0';
 
   /* ---------- Exposé aux modules ---------- */
-  window.PM = { apiSite: apiSite, cleSite: cleSite, el: el, $: $, toast: toast, Prefs: Prefs, DB: DB, Api: Api, Envoi: Envoi, uid: uid, icone: icone };
+  window.PM = { apiSite: apiSite, cleSite: cleSite, el: el, $: $, toast: toast, Prefs: Prefs, DB: DB, Api: Api, Envoi: Envoi, uid: uid, icone: icone, nombre: nombre };
   window.MODULES = window.MODULES || {};
 
   /* ---------- Démarrage ---------- */
@@ -551,6 +719,9 @@
     appliquerTheme();
     router();
     Envoi.vider();
+    DB.durable().then(function (ok) {
+      if (!ok) toast('⚠ Stockage indisponible sur ce téléphone : les saisies non envoyées seront perdues à la fermeture.', 6000);
+    });
   });
   // Chrome propose l'installation : on garde l'invitation pour le bouton « Installer l'appli » (Réglages)
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__invitInstall = e; });

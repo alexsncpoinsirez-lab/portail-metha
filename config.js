@@ -18,7 +18,10 @@ var PORTAIL_CONFIG = {
       sousTitre: 'Univers Metha de la Rotte',
       couleur: '#2f7d4f',
       neon: '#22e3a1',      // couleur du thème futuriste
-      apiUrl: '',           // (optionnel) adresse /exec du serveur du site — sinon à saisir dans Réglages
+      // SÉCURITÉ : coller ici l'adresse /exec du serveur du site. Une fois remplie, elle est
+      // utilisée sur TOUS les téléphones et un lien de configuration ne peut plus la changer
+      // (il n'apporte plus que la clé). Vide = adresse à saisir dans Réglages.
+      apiUrl: '',
       outils: [
         {
           id: 'rondes-rotte',
@@ -40,7 +43,7 @@ var PORTAIL_CONFIG = {
       sousTitre: 'Univers Arraincourt Biogaz',
       couleur: '#1f5f8b',
       neon: '#38b6ff',
-      apiUrl: '',
+      apiUrl: '',           // adresse /exec du serveur Arraincourt (voir explication au-dessus)
       outils: [
         {
           id: 'ronde-arraincourt',
