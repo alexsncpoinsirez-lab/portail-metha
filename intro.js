@@ -21,9 +21,14 @@
   var T = {
     implosion: 2.5, impact: 2.85,
     coeur1: 4.0, coeur2: 5.5,
-    phrase: 7.0, voix: 7.1, phrase2: 9.6, reflet: 10.5,
+    phrase: 7.0, voix: 6.95, phrase2: 8.35, reflet: 10.5,
     sortie: 12.1, fin: 12.8
   };
+  // Voix enregistrée par Alex (icons/intro-voix.mp3, ~4,4 s) :
+  // « Agrienergies » (0,1 → 1,0 s) tombe sur la 1re ligne, « c'est la passion qui nous anime » (1,4 s) sur la 2e.
+  var DUREE_VOIX = 4.4;
+  T.sortie = Math.max(T.sortie, T.voix + DUREE_VOIX + 0.4);
+  T.fin = T.sortie + 0.7;
 
   /* ================= Styles (préfixe ix- pour ne rien casser dans l'appli) ================= */
   var css = [
@@ -38,7 +43,7 @@
     '.ix-c.tl{top:0;left:0;border-right:0;border-bottom:0}.ix-c.tr{top:0;right:0;border-left:0;border-bottom:0}.ix-c.bl{bottom:0;left:0;border-right:0;border-top:0}.ix-c.br{bottom:0;right:0;border-left:0;border-top:0}',
     '.ix-t{position:absolute}.ix-t1{top:4px;left:34px}.ix-t2{top:4px;right:34px}.ix-t3{bottom:4px;left:34px}.ix-t4{bottom:4px;right:34px;font-variant-numeric:tabular-nums}',
     '.ix-flash{position:absolute;inset:0;background:radial-gradient(circle at 50% 46%,#fff 0,#bff7ea 18%,rgba(56,182,255,0) 60%);opacity:0;pointer-events:none;mix-blend-mode:screen}',
-    '.ix-centre{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);width:min(78vw,420px);display:grid;justify-items:center;gap:22px;pointer-events:none}',
+    '.ix-centre{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);width:min(78vw,420px);display:grid;justify-items:center;gap:22px;pointer-events:none;z-index:2}',
     '.ix-plaque{position:relative;width:min(64vw,36vh,300px);aspect-ratio:1/.92;display:grid;place-items:center;border-radius:12px;opacity:0;will-change:transform,opacity,filter;',
     'background:#c9cdd1 url("icons/alu.jpg") center/cover no-repeat;border:1px solid rgba(210,222,235,.7);',
     'box-shadow:inset 0 2px 0 rgba(255,255,255,.95),inset 2px 0 0 rgba(255,255,255,.5),inset 0 -3px 0 rgba(0,0,0,.28),inset -2px 0 0 rgba(0,0,0,.18),inset 0 0 0 5px rgba(255,255,255,.08),0 14px 34px rgba(0,0,0,.65)}',
@@ -56,8 +61,10 @@
     '.ix-coin.d{bottom:-12px;right:-12px;border-left:0;border-top:0;border-color:var(--ix-vert);filter:drop-shadow(0 0 4px var(--ix-vert))}',
     '.ix-choc{position:absolute;inset:0;pointer-events:none;opacity:0;background:radial-gradient(circle at 50% 46%,transparent 25%,rgba(0,0,0,.85) 80%)}',
     '.ix-phrase{font-family:var(--ix-display);font-weight:800;text-transform:uppercase;text-align:center;line-height:.95;opacity:0;font-size:clamp(28px,8.4vw,52px);letter-spacing:.05em;color:#e6f1ff;white-space:nowrap;',
-    'text-shadow:-2px 0 rgba(34,227,161,.75),2px 0 rgba(56,182,255,.8),0 0 24px rgba(56,182,255,.45)}',
-    '.ix-l2{display:block;font-size:.56em;letter-spacing:.2em;margin-top:6px;color:var(--ix-neon);padding-left:.2em}',
+    '}',
+    /* lettrage n°5 choisi par Alex : titre vert dégradé en relief, phrase en blanc (net, sans effet « écran ») */
+    '.ix-l1{display:inline-block;padding:0 .04em .08em;background:linear-gradient(180deg,#8eea9e 0%,#1f9d4c 100%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;filter:drop-shadow(0 2px 0 #0b4a24) drop-shadow(0 4px 6px rgba(0,0,0,.6))}',
+    '.ix-l2{display:block;font-size:.46em;font-weight:700;letter-spacing:.08em;margin-top:10px;padding-left:.08em;color:#ffffff;text-shadow:0 1px 3px rgba(0,0,0,.8)}',
     '.ix-trait{width:0;height:2px;background:linear-gradient(90deg,transparent,var(--ix-neon),transparent);box-shadow:0 0 10px var(--ix-neon)}',
     '.ix-passer{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(46px + env(safe-area-inset-bottom,0px));z-index:3;-webkit-appearance:none;appearance:none;background:rgba(0,0,0,.35);border:1px solid rgba(130,200,255,.18);color:#8ea3bd;font-family:var(--ix-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;padding:9px 14px;border-radius:8px;cursor:pointer}',
     /* écran « toucher pour entrer » */
@@ -353,7 +360,7 @@
     if (t >= T.phrase) {
       q('.ix-phrase').style.opacity = 1;
       decoder(q('.ix-l1'), 'AGRIENERGIES', (t - T.phrase) / 0.9);
-      decoder(q('.ix-l2'), 'ULTIMATE FIGHTING', (t - T.phrase2) / 0.7);
+      decoder(q('.ix-l2'), 'C\u2019EST LA PASSION QUI NOUS ANIME', (t - T.phrase2) / 1.1);
       q('.ix-trait').style.width = (ease((t - T.phrase) / 0.6) * 100) + '%';
     }
 
