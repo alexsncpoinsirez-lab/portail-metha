@@ -893,3 +893,7 @@ body.futur .pp-ecoule b { color: var(--neon); font-family: var(--mono); }
 body.futur .pp-ajout { color: var(--neon); background: color-mix(in srgb, var(--neon) 12%, transparent); border-color: color-mix(in srgb, var(--neon) 45%, transparent);
   box-shadow: 0 0 12px color-mix(in srgb, var(--neon) 22%, transparent); }
 .ag-modale-boite .pp-form textarea { width: 100%; }
+
+/* logo du portail dans la barre du haut */
+.barre-logo { width: 34px; height: 34px; border-radius: 9px; flex: none; box-shadow: 0 0 0 1px rgba(255,255,255,.12); }
+body.futur .barre-logo { box-shadow: 0 0 0 1px rgba(56,225,255,.3), 0 0 12px rgba(34,227,161,.18); }
