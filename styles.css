@@ -992,3 +992,7 @@ body.futur .st-partage { color: #7fd3ff; }
 .st-sortie-ligne input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); }
 .st-sortie-ligne.coche { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
 .st-sortie-nom { flex: 1; min-width: 0; }
+.st-sous-titre { font-size: 12px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; color: var(--texte-2); margin: 14px 0 6px; }
+.st-rangement { display: flex; gap: 8px; }
+.st-rangement .st-type { flex: 0 0 120px; margin: 0; }
+.st-rangement input { flex: 1; min-width: 0; }
