@@ -55,11 +55,20 @@
   // et le zéro s'affiche barré « Ø » pour qu'on ne lise jamais un O à la place
   function plie(code) { return String(code || '').replace(/O/g, '0'); }
   function affiche(code) { return String(code || '').replace(/0/g, 'Ø'); }
+  // Casier = LETTRE (colonne, de gauche à droite) puis CHIFFRE (étage 0 à 3, du bas vers le haut) :
+  // « 0F » s'écrit « F0 », « 3J-K-L » s'écrit « J3-K3-L3 »
+  function casierCode(code) {
+    var m = /^(\d)([A-Z]+(?:-[A-Z]+)*)$/.exec(code);
+    return m ? m[2].split('-').map(function (l) { return l + m[1]; }).join('-') : code;
+  }
+  var CASIER_OK = /^[A-Z]{1,2}[0-3](?:-[A-Z]{1,2}[0-3])*$/;
   function rangement(lib) {
     var m = /^\s*(casier|tiroir|armoire)\b\s*(.*)$/i.exec(String(lib || ''));
-    return m ? { type: m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase(), code: canonCode(m[2]) } : { type: '', code: canonCode(lib) };
+    if (!m) return { type: '', code: canonCode(lib) };
+    var type = m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase(), code = canonCode(m[2]);
+    return { type: type, code: type === 'Casier' ? casierCode(code) : code };
   }
-  function libelle(type, code) { code = canonCode(code); return code ? (type ? type + ' ' + code : code) : ''; }
+  function libelle(type, code) { code = canonCode(code); if (type === 'Casier') code = casierCode(code); return code ? (type ? type + ' ' + code : code) : ''; }
   // ancienne liste (A1…) : ce sont des casiers
   function libelleRangement(lib) { var r = rangement(lib); return libelle(r.type || 'Casier', r.code); }
   function rangementTexte(lib) {
@@ -515,14 +524,14 @@
           if (m && (m[2] !== undefined) && (/^(casier|tiroir|armoire|cas|tir|arm)$/i.test(m[1]) || /\s/.test(t.charAt(m[1].length)) || t.length === 1)) {
             type = /^a/i.test(m[1]) ? 'Armoire' : /^c/i.test(m[1]) ? 'Casier' : 'Tiroir'; t = m[2];
           }
-          return { type: type, code: canonCode(t) };
+          return { type: type, code: casierCode(canonCode(t)) }; // « 0F » tapé = F0
         }
         function proposer() {
           liste.innerHTML = '';
           var a = analyser(champ.value);
           if (!champ.value.trim()) return;
           var gs = groupesCasiers().filter(function (g) { return g.cle !== '~' && (g.type ? (!a.type || g.type === a.type) : !a.type); });
-          var q = plie(a.code);
+          var q = casierCode(plie(a.code));
           var debut = gs.filter(function (g) { return plie(g.code).indexOf(q) === 0; });
           var dedans = gs.filter(function (g) { return q && plie(g.code).indexOf(q) > 0; });
           var res = debut.concat(dedans).slice(0, 40);
@@ -532,7 +541,8 @@
           });
           var exact = a.code && gs.some(function (g) { return plie(g.code) === q && (!a.type || g.type === a.type); });
           if (a.code && !exact && o.creation !== false) {
-            var types = a.type ? [a.type] : ['Casier', 'Tiroir', 'Armoire'];
+            var types = (a.type ? [a.type] : ['Casier', 'Tiroir', 'Armoire']).filter(function (t) { return t !== 'Casier' || CASIER_OK.test(a.code); });
+            if (!types.length) { liste.appendChild(el('p', { class: 'petit' }, ['Un casier s’écrit lettre puis étage 0 à 3 (ex. F0, G2).'])); return; }
             liste.appendChild(el('div', { class: 'st-rgt-creer' }, [el('span', { class: 'petit' }, ['« ' + affiche(a.code) + ' » n’existe pas encore :'])].concat(types.map(function (t) {
               return el('button', { class: 'btn-second st-mini', type: 'button', onclick: function () {
                 var lib = libelle(t, a.code);
