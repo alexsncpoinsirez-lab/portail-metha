@@ -1004,3 +1004,15 @@ body.futur .st-partage { color: #7fd3ff; }
 .st-rgt-prop:active { border-color: var(--accent); }
 .st-rgt-creer { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border: 1px dashed var(--bord); border-radius: 12px; }
 .st-rgt-choisi { font-size: 14px; }
+
+/* ---------- Stock : écran Photos ---------- */
+.st-onglets { display: flex; gap: 6px; margin: 4px 0 10px; flex-wrap: wrap; }
+.st-onglet { flex: 1 1 140px; min-height: 42px; border: 1px solid var(--bord); border-radius: 12px; background: var(--surface); color: var(--texte); font: inherit; font-weight: 600; }
+.st-onglet.actif { border-color: var(--accent, var(--neon, #22e3a1)); box-shadow: inset 0 0 0 1px var(--accent, var(--neon, #22e3a1)); }
+.stock > .st-filtre { width: 100%; margin-bottom: 10px; box-sizing: border-box; }
+.st-galerie { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.st-vignette { border: 1px solid var(--bord); border-radius: 12px; overflow: hidden; background: var(--surface); display: flex; flex-direction: column; }
+.st-vignette img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; cursor: zoom-in; background: var(--bord); }
+.st-vignette-txt { text-align: left; padding: 6px 8px; border: 0; background: none; color: var(--texte); font: inherit; font-size: 13px; cursor: pointer; flex: 1; min-width: 0; }
+.st-vignette-txt b { display: block; overflow: hidden; text-overflow: ellipsis; }
+.st-ligne-photo { display: flex; align-items: center; gap: 8px; border: 1px solid var(--bord); border-radius: 12px; background: var(--surface); padding: 4px 6px 4px 0; }

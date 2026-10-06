@@ -198,7 +198,7 @@
       var T = null;            // stock du site (serveur)
       var attente = [];        // modifications pas encore confirmées par le serveur
       var ecran = 'materiels', materiel = null, filtre = '', recherche = '';
-      var casierChoisi = null, invPortee = null, invFaits = {};
+      var casierChoisi = null, invPortee = null, invFaits = {}, photoMode = 'avec', photoFiltre = '';
       var params = ctx.params || [];
       var instance = PM.uid();
       window.__stInstance = instance;
@@ -301,7 +301,7 @@
           el('b', {}, ['Mode démonstration. ']), el('span', { class: 'petit' }, ['Rien n’est envoyé. Renseigne le serveur du site dans ']), el('a', { href: '#reglages' }, ['Réglages']), '.']));
         racine.appendChild(barreOutils());
         ({ pieces: ecranPieces, casiers: ecranCasiers, inventaire: ecranInventaire, commander: ecranCommander, recherche: ecranRecherche,
-          historique: ecranHistorique, communes: ecranCommunes, controle: ecranControle }[ecran] || ecranMateriels)(racine);
+          historique: ecranHistorique, communes: ecranCommunes, controle: ecranControle, photos: ecranPhotos }[ecran] || ecranMateriels)(racine);
         window.scrollTo(0, y);
       }
       function aller(e, m) { ecran = e; if (m !== undefined) materiel = m; filtre = ''; afficher(); window.scrollTo(0, 0); }
@@ -314,6 +314,7 @@
         return el('div', { class: 'st-outils' }, [
           b('▦ Matériels', 'Matériels du site', function () { aller('materiels'); }, ecran === 'materiels' || ecran === 'pieces'),
           b('🗄 Rangements', 'Vue par casier', function () { aller('casiers'); }, ecran === 'casiers'),
+          b('🖼 Photos', 'Photos des pièces', function () { aller('photos'); }, ecran === 'photos'),
           b('📷 Scan', 'Scanner un QR code', scanner),
           b('🛒 Commandes' + (nbCmd ? ' (' + nbCmd + ')' : ''), 'À commander / commandé', function () { aller('commander'); }, ecran === 'commander'),
           b('📋 Inventaire', 'Mode inventaire', function () { aller('inventaire'); }, ecran === 'inventaire'),
@@ -321,6 +322,53 @@
           b('🔗', 'Pièces au stock commun', function () { aller('communes'); }, ecran === 'communes'),
           b('🩺', 'Contrôle des données', function () { aller('controle'); }, ecran === 'controle')
         ]);
+      }
+
+      /* ---------- photos : toutes les pièces en images, et celles qui n'en ont pas encore ---------- */
+      function miniature(u) { return urlPhoto(u).replace(/&sz=w\d+$/, '&sz=w400'); }
+      function ecranPhotos(racine) {
+        var tout = toutesPieces().filter(function (p) { return p.designation || p.reference; });
+        var avec = tout.filter(function (p) { return urlPhoto(p.photo); }), sans = tout.filter(function (p) { return !urlPhoto(p.photo); });
+        racine.appendChild(el('h2', { class: 'pp-titre', style: 'margin-bottom:6px' }, ['Photos des pièces']));
+        racine.appendChild(el('div', { class: 'st-onglets' }, [
+          el('button', { class: 'st-onglet' + (photoMode === 'avec' ? ' actif' : ''), type: 'button', onclick: function () { photoMode = 'avec'; afficher(); } }, ['🖼 Avec photo (' + avec.length + ')']),
+          el('button', { class: 'st-onglet' + (photoMode === 'sans' ? ' actif' : ''), type: 'button', onclick: function () { photoMode = 'sans'; afficher(); } }, ['➕ Sans photo (' + sans.length + ')'])]));
+        var champ = el('input', { type: 'search', class: 'st-filtre', placeholder: '🔍 Pièce, référence, matériel, rangement…', value: photoFiltre, autocomplete: 'off' });
+        racine.appendChild(champ);
+        var zone = el('div');
+        racine.appendChild(zone);
+        function remplir() {
+          zone.innerHTML = '';
+          var t = norm(photoFiltre);
+          var liste = (photoMode === 'avec' ? avec : sans).filter(function (p) {
+            return !t || norm([p.designation, p.reference, p.materiel, p.casier, p.casier ? rangementTexte(p.casier) : ''].join(' ')).indexOf(t) >= 0;
+          });
+          if (!liste.length) { zone.appendChild(el('p', { class: 'petit' }, [t ? 'Aucune pièce ne correspond à « ' + photoFiltre + ' ».' : photoMode === 'avec' ? 'Aucune photo pour l’instant. Va dans « Sans photo » pour en prendre.' : 'Toutes les pièces ont une photo 👍'])); return; }
+          if (photoMode === 'avec') {
+            var g = el('div', { class: 'st-galerie' });
+            liste.forEach(function (p) {
+              g.appendChild(el('div', { class: 'st-vignette' }, [
+                el('img', { src: miniature(p.photo), alt: p.designation || p.reference, loading: 'lazy', onclick: function () { pleinEcran(p.photo); } }),
+                el('button', { class: 'st-vignette-txt', type: 'button', onclick: function () { ouvrirFiche(p); } }, [
+                  el('b', {}, [p.designation || p.reference]),
+                  el('div', { class: 'st-sous' }, [(p.reference ? p.reference + ' · ' : '') + p.materiel + (p.casier ? ' · ' + rangementTexte(p.casier) : '')])])]));
+            });
+            zone.appendChild(g);
+          } else {
+            var l = el('div', { class: 'st-sortie', style: 'max-height:none' });
+            liste.slice(0, 200).forEach(function (p) {
+              l.appendChild(el('div', { class: 'st-ligne-photo' }, [
+                el('button', { class: 'st-vignette-txt', type: 'button', onclick: function () { ouvrirFiche(p); } }, [
+                  el('b', {}, [p.designation || p.reference]),
+                  el('div', { class: 'st-sous' }, [(p.reference ? p.reference + ' · ' : '') + p.materiel + (p.casier ? ' · ' + rangementTexte(p.casier) : '')])]),
+                el('button', { class: 'btn-second st-mini', type: 'button', onclick: function () { choisirPhoto(p); } }, ['📷 Prendre'])]));
+            });
+            if (liste.length > 200) l.appendChild(el('p', { class: 'petit' }, ['… ' + (liste.length - 200) + ' autres : précise la recherche.']));
+            zone.appendChild(l);
+          }
+        }
+        champ.addEventListener('input', function () { photoFiltre = champ.value; remplir(); });
+        remplir();
       }
 
       /* ---------- matériels + recherche instantanée dans tout le site ---------- */
