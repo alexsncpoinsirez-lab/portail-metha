@@ -45,17 +45,25 @@
     return l;
   }
   // « Casier 3 G » / « Tiroir C10 / 1 » -> { type, code } ; sans préfixe -> type inconnu
+  // Repère écrit toujours de la même façon : majuscules, sans espace, « / » et « - » -> « - »
+  // (« 3 G » = « 3G », « C10 / 1 » = « C10-1 », « B1/ 2 » = « B1-2 ») : impossible de créer deux fois le même rangement.
+  function canonCode(c) {
+    return String(c || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s*[\/\-_.]\s*/g, '-').replace(/\s+/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  }
   function rangement(lib) {
     var m = /^\s*(casier|tiroir)\b\s*(.*)$/i.exec(String(lib || ''));
-    return m ? { type: m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase(), code: m[2].trim() } : { type: '', code: String(lib || '').trim() };
+    return m ? { type: m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase(), code: canonCode(m[2]) } : { type: '', code: canonCode(lib) };
   }
+  function libelle(type, code) { code = canonCode(code); return code ? (type ? type + ' ' + code : code) : ''; }
   // ancienne liste (A1…) : ce sont des casiers
-  function libelleRangement(lib) { return rangement(lib).type ? String(lib).trim() : (String(lib || '').trim() ? 'Casier ' + String(lib).trim() : ''); }
+  function libelleRangement(lib) { var r = rangement(lib); return libelle(r.type || 'Casier', r.code); }
   function rangementTexte(lib) {
     var r = rangement(lib);
     return r.type === 'Casier' ? '🗄 Casier ' + r.code : r.type === 'Tiroir' ? '🗃 Tiroir ' + r.code : String(lib || '');
   }
-  function casierNorm(c) { return String(c || '').trim().toUpperCase().replace(/\s+/g, ' '); }
+  // clé de comparaison : type + repère normalisé
+  function casierNorm(c) { if (!String(c || '').trim()) return ''; var r = rangement(c); return r.type + '|' + r.code; }
   // QR code fabriqué sur le téléphone (bibliothèque qrcode.js, hors ligne, rien n'est envoyé ailleurs)
   function qrDataUrl(texte, taille) {
     if (typeof window.qrcode !== 'function') return '';
@@ -415,7 +423,7 @@
         var g = {};
         function groupe(lib) {
           var k = casierNorm(lib);
-          if (!g[k]) { var r = rangement(lib); g[k] = { casier: lib, cle: k, type: r.type, code: r.code, pieces: [] }; }
+          if (!g[k]) { var r = rangement(lib); g[k] = { casier: r.type ? libelle(r.type, r.code) : String(lib).trim(), cle: k, type: r.type, code: r.code, pieces: [] }; }
           return g[k];
         }
         casiersDefinis().forEach(function (c) { if (c) groupe(c); });
@@ -461,36 +469,85 @@
       function listeCasiers() {
         return el('datalist', { id: 'st-liste-casiers' }, groupesCasiers().filter(function (g) { return g.cle !== '~'; }).map(function (g) { return el('option', { value: g.casier }); }));
       }
-      // champ « rangement » : type (Casier / Tiroir) + code
-      function champRangement(valeur) {
-        var r = rangement(valeur || '');
-        var type = el('select', { class: 'st-select st-type' }, [el('option', { value: 'Casier' }, ['🗄 Casier']), el('option', { value: 'Tiroir' }, ['🗃 Tiroir']), el('option', { value: '' }, ['Autre'])]);
-        type.value = r.type || (valeur ? '' : 'Casier');
-        var code = el('input', { type: 'text', value: r.code, placeholder: 'ex : A1, 3 G, C10 / 1', autocomplete: 'off', list: 'st-liste-codes' });
-        var codes = el('datalist', { id: 'st-liste-codes' });
-        function majCodes() {
-          codes.innerHTML = '';
-          groupesCasiers().filter(function (g) { return g.cle !== '~' && g.type === type.value; }).forEach(function (g) { codes.appendChild(el('option', { value: g.code })); });
+      /* Sélecteur de rangement : on tape quelques lettres, la liste des casiers / tiroirs
+         qui correspondent se réduit à chaque lettre ; un toucher choisit. « c » ou « casier »
+         en tête = seulement les casiers, « t » ou « tiroir » = seulement les tiroirs.
+         Création seulement si le repère n'existe pas, toujours au format « Casier X » / « Tiroir X ». */
+      function selecteurRangement(o) {
+        o = o || {};
+        var choisi = o.valeur ? (rangement(o.valeur).type ? libelle(rangement(o.valeur).type, rangement(o.valeur).code) : String(o.valeur).trim()) : '';
+        var champ = el('input', { type: 'search', class: 'st-filtre st-filtre-grand st-rgt-champ', placeholder: o.placeholder || '🔍 Casier ou tiroir : A1, C10, 3G…', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false' });
+        var info = el('div', { class: 'st-rgt-choisi' });
+        var liste = el('div', { class: 'st-rgt-liste' });
+        function majInfo() {
+          info.innerHTML = '';
+          if (choisi) info.appendChild(el('span', {}, ['Choisi : ', el('b', {}, [rangementTexte(choisi)])]));
+          else if (o.vide) info.appendChild(el('span', { class: 'petit' }, [o.vide]));
         }
-        type.addEventListener('change', majCodes); majCodes();
+        function choisir(lib) {
+          choisi = lib; champ.value = ''; liste.innerHTML = ''; majInfo();
+          if (o.surChoix) o.surChoix(lib);
+        }
+        function analyser(q) {
+          var t = String(q || '').trim(), type = '';
+          var m = /^(casier|tiroir|cas|tir|c|t)(?:\s+|$)(.*)$/i.exec(t);
+          // « c » / « t » seuls ou suivis d'un espace = filtre de type ; « C10 » reste un repère
+          if (m && (m[2] !== undefined) && (/^(casier|tiroir|cas|tir)$/i.test(m[1]) || /\s/.test(t.charAt(m[1].length)) || t.length === 1)) {
+            type = /^c/i.test(m[1]) ? 'Casier' : 'Tiroir'; t = m[2];
+          }
+          return { type: type, code: canonCode(t) };
+        }
+        function proposer() {
+          liste.innerHTML = '';
+          var a = analyser(champ.value);
+          if (!champ.value.trim()) return;
+          var gs = groupesCasiers().filter(function (g) { return g.cle !== '~' && (g.type ? (!a.type || g.type === a.type) : !a.type); });
+          var debut = gs.filter(function (g) { return g.code.indexOf(a.code) === 0; });
+          var dedans = gs.filter(function (g) { return a.code && g.code.indexOf(a.code) > 0; });
+          var res = debut.concat(dedans).slice(0, 40);
+          res.forEach(function (g) {
+            liste.appendChild(el('button', { class: 'st-rgt-prop', type: 'button', onclick: function () { choisir(g.casier); } }, [
+              el('span', {}, [g.type ? rangementTexte(g.casier) : '❔ ' + g.casier + ' (type à préciser)']), el('span', { class: 'st-sous' }, [g.pieces.length + ' pièce' + (g.pieces.length > 1 ? 's' : '')])]));
+          });
+          var exact = a.code && gs.some(function (g) { return g.code === a.code && (!a.type || g.type === a.type); });
+          if (a.code && !exact && o.creation !== false) {
+            var types = a.type ? [a.type] : ['Casier', 'Tiroir'];
+            liste.appendChild(el('div', { class: 'st-rgt-creer' }, [el('span', { class: 'petit' }, ['« ' + a.code + ' » n’existe pas encore :'])].concat(types.map(function (t) {
+              return el('button', { class: 'btn-second st-mini', type: 'button', onclick: function () {
+                var lib = libelle(t, a.code);
+                if (!confirm('Créer le rangement « ' + lib + ' » ?')) return;
+                saisir({ type: 'stock.casierAjout', nom: lib }); PM.toast(lib + ' ajouté');
+                choisir(lib);
+              } }, ['+ ' + (t === 'Casier' ? '🗄 ' : '🗃 ') + t + ' ' + a.code]);
+            }))));
+          }
+          if (!res.length && !(a.code && !exact)) liste.appendChild(el('p', { class: 'petit' }, ['Aucun rangement ne correspond.']));
+        }
+        champ.addEventListener('input', proposer);
+        champ.addEventListener('keydown', function (e) {
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          var premier = liste.querySelector('.st-rgt-prop');
+          if (premier) premier.click();
+        });
+        majInfo();
         return {
-          noeud: el('div', { class: 'st-rangement' }, [type, code, codes]),
-          valeur: function () { var c = code.value.trim().replace(/\s+/g, ' '); return c ? (type.value ? type.value + ' ' + c : c) : ''; },
-          focus: function () { code.focus(); }
+          noeud: el('div', { class: 'st-rgt' }, [champ, liste, info]),
+          valeur: function () { return choisi; },
+          vider: function () { choisi = ''; majInfo(); },
+          definir: function (lib) { choisi = lib; majInfo(); },
+          focus: function () { champ.focus(); }
         };
       }
+      function champRangement(valeur) {
+        return selecteurRangement({ valeur: valeur, vide: 'Aucun rangement : tape quelques lettres pour en choisir un.' });
+      }
       function nouveauCasier(suite) {
-        var ch = champRangement('');
-        var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
-        var fermer = modale('Nouveau rangement', 'Il s’ajoute à la liste des casiers et tiroirs de ce site.', [
-          el('div', { class: 'champ' }, [el('label', {}, ['Type et repère']), ch.noeud]), msg,
-          el('button', { class: 'btn-principal', type: 'button', onclick: function () {
-            var c = ch.valeur();
-            if (!c) { msg.textContent = 'Indique le repère (ex : A1, C10 / 1).'; msg.hidden = false; return; }
-            if (casiersDefinis().some(function (x) { return casierNorm(x) === casierNorm(c); })) { fermer(); if (suite) suite(c); return; }
-            fermer(); saisir({ type: 'stock.casierAjout', nom: c }); PM.toast(c + ' ajouté'); if (suite) suite(c);
-          } }, ['Ajouter'])]);
-        setTimeout(ch.focus, 30);
+        var fermer;
+        var sel = selecteurRangement({ placeholder: 'Tape le repère : C10-4, 3G, AA1…', surChoix: function (lib) { fermer(); if (suite) suite(lib); },
+          vide: 'S’il existe déjà, il apparaît dans la liste : touche-le. Sinon, choisis « + Casier » ou « + Tiroir ».' });
+        fermer = modale('Nouveau rangement', 'Format unique : « Casier » ou « Tiroir » + repère en majuscules (ex. Casier 3G, Tiroir C10-1).', [sel.noeud]);
+        setTimeout(sel.focus, 30);
       }
       // inventaire d'un rangement : une pièce trouvée dedans y est rangée, avec la quantité comptée
       function pieceTrouvee(casier) {
@@ -532,28 +589,24 @@
       function ecranInventaire(racine) {
         racine.appendChild(el('h2', { class: 'pp-titre', style: 'margin-bottom:6px' }, ['Inventaire']));
         racine.appendChild(el('p', { class: 'petit' }, ['Saisis le nombre compté : l’appli calcule l’écart et le note dans l’historique (motif « Inventaire »).']));
-        var gsInv = groupesCasiers();
-        function groupeOpt(lib, type) {
-          var l = gsInv.filter(function (g) { return g.type === type; });
-          return l.length ? [el('optgroup', { label: lib }, l.map(function (g) { return el('option', { value: 'casier|' + g.casier }, [g.cle === '~' ? g.casier : rangementTexte(g.casier)]); }))] : [];
-        }
-        var choix = el('select', { class: 'st-select', style: 'flex:1 1 200px;margin:0' }, [el('option', { value: '' }, ['Choisir un matériel, un casier ou un tiroir…'])]
-          .concat([el('optgroup', { label: 'Matériels' }, mats().map(function (m) { return el('option', { value: 'materiel|' + m.nom }, [m.nom]); }))])
-          .concat(groupeOpt('Casiers', 'Casier')).concat(groupeOpt('Tiroirs', 'Tiroir')).concat(groupeOpt('Autres rangements', '')));
-        if (invPortee) choix.value = invPortee.type + '|' + invPortee.valeur;
-        choix.addEventListener('change', function () {
-          var v = choix.value.split('|');
-          invPortee = v[0] ? { type: v[0], valeur: v.slice(1).join('|') } : null;
-          invFaits = {};
-          afficher();
+        var choixMat = el('select', { class: 'st-select', style: 'margin:0' }, [el('option', { value: '' }, ['…ou un matériel entier'])]
+          .concat(mats().map(function (m) { return el('option', { value: m.nom }, [m.nom]); })));
+        if (invPortee && invPortee.type === 'materiel') choixMat.value = invPortee.valeur;
+        choixMat.addEventListener('change', function () {
+          invPortee = choixMat.value ? { type: 'materiel', valeur: choixMat.value } : null; invFaits = {}; afficher();
         });
-        racine.appendChild(el('div', { class: 'st-actions' }, [choix,
-          el('button', { class: 'btn-second', type: 'button', onclick: function () { nouveauCasier(function (c) { invPortee = { type: 'casier', valeur: c }; invFaits = {}; afficher(); }); } }, ['+ Nouveau rangement'])]));
+        var sel = selecteurRangement({ valeur: invPortee && invPortee.type === 'casier' && invPortee.valeur !== '(sans rangement)' ? invPortee.valeur : '',
+          vide: 'Tape un repère : la liste se réduit à chaque lettre.',
+          surChoix: function (lib) { invPortee = { type: 'casier', valeur: lib }; invFaits = {}; afficher(); } });
+        racine.appendChild(el('div', { class: 'champ' }, [el('label', {}, ['Casier ou tiroir à inventorier']), sel.noeud]));
+        racine.appendChild(choixMat);
+        if (!invPortee) setTimeout(sel.focus, 30);
         if (!invPortee) return;
         var parCasier = invPortee.type === 'casier' && invPortee.valeur !== '(sans rangement)';
         if (parCasier) racine.appendChild(el('button', { class: 'btn-second st-large', style: 'margin:0 0 12px', type: 'button', onclick: function () { pieceTrouvee(invPortee.valeur); } }, ['+ Pièce trouvée ici']));
         var liste = invPortee.type === 'materiel' ? pieces(invPortee.valeur)
           : toutesPieces().filter(function (p) { return memeRangement(p, invPortee.valeur); });
+        racine.appendChild(el('h3', { class: 'pp-h3', style: 'margin-top:14px' }, [invPortee.type === 'materiel' ? invPortee.valeur : rangementTexte(invPortee.valeur)]));
         if (!liste.length) { racine.appendChild(el('div', { class: 'vide-msg' }, [parCasier ? 'Vide pour l’instant : ajoute les pièces trouvées avec le bouton ci-dessus.' : 'Aucune pièce.'])); return; }
         var champs = [];
         var lignes = liste.map(function (p) {
@@ -745,14 +798,14 @@
         var ch = champRangement(p.casier || '');
         var sugg = el('div', { class: 'st-sugg' });
         var fermer = modale('Modifier le rangement', 'Casier ou tiroir : propre à cette ligne, même pour une référence partagée.', [
-          el('div', { class: 'champ' }, [el('label', {}, ['Type et repère']), ch.noeud]), sugg,
+          el('div', { class: 'champ' }, [el('label', {}, ['Casier ou tiroir']), ch.noeud]), sugg,
           el('button', { class: 'btn-principal', type: 'button', onclick: function () {
             var v = ch.valeur();
-            if (v === (p.casier || '')) { fermer(); return; }
+            if (casierNorm(v) === casierNorm(p.casier || '')) { fermer(); return; }
             if (!confirm('Changer « ' + (p.casier || 'non renseigné') + ' » en « ' + (v || 'non renseigné') + ' » ?')) return;
             fermer(); saisir(Object.assign({ type: 'stock.casier', casier: v }, refPiece(p)));
           } }, ['Enregistrer'])]);
-        var inp = { set value(v) { var r = rangement(v); var t = ch.noeud.querySelector('select'); t.value = r.type; t.dispatchEvent(new Event('change')); ch.noeud.querySelector('input').value = r.code; } };
+        var inp = { set value(v) { ch.definir(libelleRangement(v)); } };
         // casiers déjà utilisés pour la même référence (ce site tout de suite, l'autre site si réseau)
         var autres = toutesPieces().filter(function (x) { return p.reference && x.reference === p.reference && x !== p && x.casier && !(x.materiel === p.materiel && x.rowIndex === p.rowIndex); })
           .map(function (x) { return { site: T.site, materiel: x.materiel, casier: x.casier }; });

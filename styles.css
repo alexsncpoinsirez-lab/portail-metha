@@ -996,3 +996,11 @@ body.futur .st-partage { color: #7fd3ff; }
 .st-rangement { display: flex; gap: 8px; }
 .st-rangement .st-type { flex: 0 0 120px; margin: 0; }
 .st-rangement input { flex: 1; min-width: 0; }
+.st-rgt { display: grid; gap: 6px; }
+.st-rgt-champ { margin: 0 !important; }
+.st-rgt-liste { display: flex; flex-wrap: wrap; gap: 6px; max-height: 46vh; overflow: auto; }
+.st-rgt-prop { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; min-height: 44px; padding: 6px 12px; border: 1px solid var(--bord); border-radius: 12px; background: var(--surface); color: var(--texte); font-size: 15px; font-weight: 700; text-align: left; }
+.st-rgt-prop .st-sous { margin: 0; font-weight: 500; }
+.st-rgt-prop:active { border-color: var(--accent); }
+.st-rgt-creer { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border: 1px dashed var(--bord); border-radius: 12px; }
+.st-rgt-choisi { font-size: 14px; }
