@@ -398,6 +398,11 @@
           fermer();
           afficher();
           PM.toast(texte + (modeDemo || navigator.onLine ? '' : ' Envoi dès le retour du réseau.'));
+          // pièces remplacées : on propose de les sortir du stock (module Stock pièces)
+          if (!iv && !modeDemo && choix.length && window.STOCK_SORTIE) {
+            window.STOCK_SORTIE({ siteId: ctx.site.id, apiUrl: ctx.apiUrl, cle: ctx.cle, equipement: e.nom, typeId: e.type,
+              pieces: libellesPieces(t, choix).split(', '), date: donnees.date, agent: operateur });
+          }
         });
 
         var champsCompteurs = [el('div', { class: 'champ' }, [el('label', { for: 'pp-date' }, ['Date']), inDate]),
