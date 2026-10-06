@@ -41,7 +41,7 @@
   }
   function casiersParDefaut() {
     var l = [];
-    for (var c = 0; c < 26; c++) for (var n = 1; n <= 4; n++) l.push('Casier ' + String.fromCharCode(65 + c) + n);
+    for (var c = 0; c < 26; c++) for (var n = 0; n <= 3; n++) l.push('Casier ' + String.fromCharCode(65 + c) + n);
     return l;
   }
   // « Casier 3 G » / « Tiroir C10 / 1 » -> { type, code } ; sans préfixe -> type inconnu
@@ -168,7 +168,7 @@
   function demo() {
     function p(i, r, d, q, s, c) { return { rowIndex: i, reference: r, designation: d, quantiteStock: q, seuil: s, casier: c || '', cotes: '', substitution: '', reperes: '', photo: '', partage: false }; }
     var casiers = [];
-    for (var c = 0; c < 26; c++) for (var n = 1; n <= 4; n++) casiers.push('Casier ' + String.fromCharCode(65 + c) + n);
+    for (var c = 0; c < 26; c++) for (var n = 0; n <= 3; n++) casiers.push('Casier ' + String.fromCharCode(65 + c) + n);
     return { site: 'Démonstration', urlScanner: '', casiers: casiers, materiels: [
       { nom: 'Broyeur', pieces: [p(2, 'GFL 952 M9', 'Grille', 6, 3, '2F'), p(3, 'GSM019E4', 'Couteau', 2, 16, '2F'), p(4, 'DFD0019', 'Mousse O', 44, 8, '3A')] },
       { nom: 'Pompe CC', pieces: [p(2, 'PKE 0027', 'Stator', 1, 1, 'E3'), p(3, 'PRO 0023', 'Rotor', 0, 1, 'E3'), p(4, 'PBT.B019', 'Garniture étanche', 2, 1, '')] },
