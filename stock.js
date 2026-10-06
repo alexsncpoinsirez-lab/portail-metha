@@ -143,7 +143,9 @@
 
   function demo() {
     function p(i, r, d, q, s, c) { return { rowIndex: i, reference: r, designation: d, quantiteStock: q, seuil: s, casier: c || '', cotes: '', substitution: '', reperes: '', photo: '', partage: false }; }
-    return { site: 'Démonstration', urlScanner: '', materiels: [
+    var casiers = [];
+    for (var c = 0; c < 26; c++) for (var n = 1; n <= 4; n++) casiers.push(String.fromCharCode(65 + c) + n);
+    return { site: 'Démonstration', urlScanner: '', casiers: casiers, materiels: [
       { nom: 'Broyeur', pieces: [p(2, 'GFL 952 M9', 'Grille', 6, 3, '2F'), p(3, 'GSM019E4', 'Couteau', 2, 16, '2F'), p(4, 'DFD0019', 'Mousse O', 44, 8, '3A')] },
       { nom: 'Pompe CC', pieces: [p(2, 'PKE 0027', 'Stator', 1, 1, 'E3'), p(3, 'PRO 0023', 'Rotor', 0, 1, 'E3'), p(4, 'PBT.B019', 'Garniture étanche', 2, 1, '')] },
       { nom: 'Séparateur Bauer', pieces: [p(2, '2003654', 'Grand tamis', 1, 1, '3C'), p(3, '2003611', 'Vis', 2, 1, '3B')] }] };
@@ -229,7 +231,7 @@
         if (navigator.vibrate) navigator.vibrate(25);
         attente.push(payload);
         if (modeDemo) {
-          T = { site: T.site, urlScanner: '', materiels: mats().map(function (m) { return { nom: m.nom, pieces: m.pieces }; }) };
+          T = { site: T.site, urlScanner: '', casiers: casiersDefinis(), materiels: mats().map(function (m) { return { nom: m.nom, pieces: m.pieces }; }) };
           attente = [];
         } else {
           PM.DB.set(K.attente, attente);
@@ -382,8 +384,19 @@
       }
 
       /* ---------- vue par casier ---------- */
+      // casiers du magasin (liste du site, A1…Z4 au départ) + ceux déjà notés sur des pièces
+      function casiersDefinis() {
+        var l = ((T && T.casiers) || []).map(casierNorm);
+        attente.forEach(function (a) {
+          var c = casierNorm(a.nom);
+          if (a.type === 'stock.casierAjout' && l.indexOf(c) < 0) l.push(c);
+          if (a.type === 'stock.casierSuppr') l = l.filter(function (x) { return x !== c; });
+        });
+        return l;
+      }
       function groupesCasiers() {
         var g = {};
+        casiersDefinis().forEach(function (c) { if (c) g[c] = []; });
         toutesPieces().forEach(function (p) { var c = casierNorm(p.casier) || '(sans casier)'; (g[c] = g[c] || []).push(p); });
         return Object.keys(g).sort(function (a, b) {
           if (a === '(sans casier)') return 1; if (b === '(sans casier)') return -1;
@@ -392,7 +405,8 @@
       }
       function ecranCasiers(racine) {
         racine.appendChild(el('h2', { class: 'pp-titre', style: 'margin-bottom:6px' }, ['Casiers']));
-        racine.appendChild(el('p', { class: 'petit' }, ['Ce qu’il y a dans chaque casier, tous matériels confondus.']));
+        racine.appendChild(el('div', { class: 'st-actions' }, [el('p', { class: 'petit', style: 'flex:1;margin:0' }, ['Ce qu’il y a dans chaque casier, tous matériels confondus.']),
+          el('button', { class: 'btn-second', type: 'button', onclick: function () { nouveauCasier(function (c) { casierChoisi = c; afficher(); }); } }, ['+ Nouveau casier'])]));
         var gs = groupesCasiers();
         var puces = el('div', { class: 'st-casiers' });
         gs.forEach(function (g) {
@@ -404,15 +418,70 @@
         var g = gs.filter(function (x) { return x.casier === casierChoisi; })[0];
         if (!g) { racine.appendChild(el('p', { class: 'petit' }, ['Touche un casier pour voir son contenu.'])); return; }
         racine.appendChild(el('div', { class: 'pp-barre', style: 'margin-top:12px' }, [el('h3', { class: 'pp-titre' }, ['Casier ' + g.casier]),
-          el('button', { class: 'btn-second', type: 'button', onclick: function () { invPortee = { type: 'casier', valeur: g.casier }; aller('inventaire'); } }, ['📋 Inventorier ce casier'])]));
-        racine.appendChild(tableau(['Pièce', 'Matériel', 'Stock', ''], g.pieces.map(function (p) { return lignePiece(p, true); }), 'st-pieces'));
+          el('button', { class: 'btn-second', type: 'button', onclick: function () { invPortee = { type: 'casier', valeur: g.casier }; invFaits = {}; aller('inventaire'); } }, ['📋 Inventorier ce casier']),
+          !g.pieces.length && g.casier !== '(sans casier)' ? el('button', { class: 'pp-icone pp-danger', type: 'button', title: 'Supprimer ce casier vide', onclick: function () {
+            if (confirm('Supprimer le casier ' + g.casier + ' de la liste ?')) { casierChoisi = null; saisir({ type: 'stock.casierSuppr', nom: g.casier }); }
+          } }, ['🗑']) : null]));
+        racine.appendChild(g.pieces.length ? tableau(['Pièce', 'Matériel', 'Stock', ''], g.pieces.map(function (p) { return lignePiece(p, true); }), 'st-pieces')
+          : el('p', { class: 'petit' }, ['Casier vide pour l’instant. Utilise « Inventorier ce casier » pour y ranger les pièces trouvées.']));
+      }
+
+      function listeCasiers() {
+        return el('datalist', { id: 'st-liste-casiers' }, groupesCasiers().filter(function (g) { return g.casier !== '(sans casier)'; }).map(function (g) { return el('option', { value: g.casier }); }));
+      }
+      function nouveauCasier(suite) {
+        var inp = el('input', { type: 'text', placeholder: 'ex : AA1, Étagère 5, Armoire B', autocomplete: 'off' });
+        var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
+        var fermer = modale('Nouveau casier', 'Il s’ajoute à la liste des casiers de ce site.', [
+          el('div', { class: 'champ' }, [el('label', {}, ['Nom du casier']), inp]), msg,
+          el('button', { class: 'btn-principal', type: 'button', onclick: function () {
+            var c = casierNorm(inp.value);
+            if (!c) { msg.textContent = 'Indique un nom.'; msg.hidden = false; return; }
+            if (casiersDefinis().indexOf(c) >= 0) { fermer(); if (suite) suite(c); return; }
+            fermer(); saisir({ type: 'stock.casierAjout', nom: c }); PM.toast('Casier ' + c + ' ajouté'); if (suite) suite(c);
+          } }, ['Ajouter'])]);
+        setTimeout(function () { inp.focus(); }, 30);
+      }
+      // inventaire d'un casier : une pièce trouvée dedans est rangée dans ce casier, avec la quantité comptée
+      function pieceTrouvee(casier) {
+        var champ = el('input', { type: 'search', class: 'st-filtre st-filtre-grand', placeholder: 'Chercher la pièce (désignation, référence)…', autocomplete: 'off' });
+        var zone = el('div', { class: 'st-sortie' });
+        var fermer = modale('Pièce trouvée dans ' + casier, 'Choisis la pièce : son casier devient ' + casier + ' et tu saisis la quantité comptée.', [champ, zone,
+          el('button', { class: 'btn-second st-large', type: 'button', onclick: function () { fermer(); materiel = mats()[0] && mats()[0].nom; ouvrirAjoutPiece(casier); } }, ['+ Pièce qui n’existe pas encore'])]);
+        function remplir() {
+          zone.innerHTML = '';
+          var t = norm(champ.value);
+          if (t.length < 2) { zone.appendChild(el('p', { class: 'petit' }, ['Tape au moins 2 caractères.'])); return; }
+          toutesPieces().filter(function (p) { return norm([p.designation, p.reference].join(' ')).indexOf(t) >= 0; }).slice(0, 30).forEach(function (p) {
+            zone.appendChild(el('button', { class: 'st-sortie-ligne', type: 'button', onclick: function () { fermer(); rangerEtCompter(p, casier); } }, [
+              el('span', { class: 'st-sortie-nom' }, [p.designation, el('div', { class: 'st-sous' }, [p.materiel + ' · ' + (p.reference || 'sans réf.') + ' · ' + (p.casier ? 'casier ' + p.casier : 'sans casier') + ' · stock ' + p.quantiteStock])])]));
+          });
+          if (!zone.children.length) zone.appendChild(el('p', { class: 'petit' }, ['Aucune pièce ne correspond.']));
+        }
+        champ.addEventListener('input', remplir); remplir();
+        setTimeout(function () { champ.focus(); }, 30);
+      }
+      function rangerEtCompter(p, casier) {
+        var inp = el('input', { type: 'text', inputmode: 'numeric', value: String(p.quantiteStock), autocomplete: 'off' });
+        var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
+        var fermer = modale(p.designation, p.materiel + ' — ' + (p.casier && casierNorm(p.casier) !== casier ? 'casier ' + p.casier + ' → ' + casier : 'casier ' + casier), [
+          el('div', { class: 'champ' }, [el('label', {}, ['Quantité comptée dans ' + casier]), inp]), msg,
+          el('button', { class: 'btn-principal', type: 'button', onclick: function () {
+            var n = entier(inp.value, 0);
+            if (isNaN(n)) { msg.textContent = 'Saisis un nombre entier (0 ou plus).'; msg.hidden = false; return; }
+            fermer();
+            if (casierNorm(p.casier) !== casier) saisir(Object.assign({ type: 'stock.casier', casier: casier }, refPiece(p)));
+            invFaits[p.materiel + '|' + cle(p)] = n;
+            saisir(Object.assign({ type: 'stock.quantite', absolu: true, compte: n, motif: 'Inventaire' }, refPiece(p)));
+          } }, ['Ranger et enregistrer'])]);
+        setTimeout(function () { inp.focus(); inp.select(); }, 30);
       }
 
       /* ---------- mode inventaire (quantité comptée) ---------- */
       function ecranInventaire(racine) {
         racine.appendChild(el('h2', { class: 'pp-titre', style: 'margin-bottom:6px' }, ['Inventaire']));
         racine.appendChild(el('p', { class: 'petit' }, ['Saisis le nombre compté : l’appli calcule l’écart et le note dans l’historique (motif « Inventaire »).']));
-        var choix = el('select', { class: 'st-select' }, [el('option', { value: '' }, ['Choisir un matériel ou un casier…'])]
+        var choix = el('select', { class: 'st-select', style: 'flex:1 1 200px;margin:0' }, [el('option', { value: '' }, ['Choisir un matériel ou un casier…'])]
           .concat([el('optgroup', { label: 'Matériels' }, mats().map(function (m) { return el('option', { value: 'materiel|' + m.nom }, [m.nom]); }))])
           .concat([el('optgroup', { label: 'Casiers' }, groupesCasiers().map(function (g) { return el('option', { value: 'casier|' + g.casier }, ['Casier ' + g.casier]); }))]));
         if (invPortee) choix.value = invPortee.type + '|' + invPortee.valeur;
@@ -422,11 +491,14 @@
           invFaits = {};
           afficher();
         });
-        racine.appendChild(choix);
+        racine.appendChild(el('div', { class: 'st-actions' }, [choix,
+          el('button', { class: 'btn-second', type: 'button', onclick: function () { nouveauCasier(function (c) { invPortee = { type: 'casier', valeur: c }; invFaits = {}; afficher(); }); } }, ['+ Nouveau casier'])]));
         if (!invPortee) return;
+        var parCasier = invPortee.type === 'casier' && invPortee.valeur !== '(sans casier)';
+        if (parCasier) racine.appendChild(el('button', { class: 'btn-second st-large', style: 'margin:0 0 12px', type: 'button', onclick: function () { pieceTrouvee(invPortee.valeur); } }, ['+ Pièce trouvée dans ce casier']));
         var liste = invPortee.type === 'materiel' ? pieces(invPortee.valeur)
           : toutesPieces().filter(function (p) { return (casierNorm(p.casier) || '(sans casier)') === invPortee.valeur; });
-        if (!liste.length) { racine.appendChild(el('div', { class: 'vide-msg' }, ['Aucune pièce.'])); return; }
+        if (!liste.length) { racine.appendChild(el('div', { class: 'vide-msg' }, [parCasier ? 'Casier vide pour l’instant : ajoute les pièces trouvées avec le bouton ci-dessus.' : 'Aucune pièce.'])); return; }
         var champs = [];
         var lignes = liste.map(function (p) {
           var k = p.materiel + '|' + cle(p);
@@ -614,10 +686,10 @@
         setTimeout(function () { inp.focus(); inp.select(); }, 30);
       }
       function editerCasier(p) {
-        var inp = el('input', { type: 'text', value: p.casier || '', placeholder: 'ex : 3 G, C10 / 1', autocomplete: 'off' });
+        var inp = el('input', { type: 'text', value: p.casier || '', placeholder: 'ex : A1, C10 / 1', autocomplete: 'off', list: 'st-liste-casiers' });
         var sugg = el('div', { class: 'st-sugg' });
         var fermer = modale('Modifier le casier', 'Le casier reste propre à cette ligne, même pour une référence partagée.', [
-          el('div', { class: 'champ' }, [el('label', {}, ['Casier']), inp]), sugg,
+          listeCasiers(), el('div', { class: 'champ' }, [el('label', {}, ['Casier']), inp]), sugg,
           el('button', { class: 'btn-principal', type: 'button', onclick: function () {
             var v = inp.value.trim();
             if (v === (p.casier || '')) { fermer(); return; }
@@ -667,15 +739,19 @@
             fermer(); saisir({ type: 'stock.document', reference: p.reference, nom: nom.value.trim(), lien: lien.value.trim() }); PM.toast('Document ajouté');
           } }, ['Ajouter'])]);
       }
-      function ouvrirAjoutPiece() {
+      function ouvrirAjoutPiece(casierImpose) {
         var c = {
           designation: el('input', { type: 'text' }), reference: el('input', { type: 'text' }),
           quantite: el('input', { type: 'text', inputmode: 'numeric', value: '0' }), seuil: el('input', { type: 'text', inputmode: 'numeric', value: '0' }),
-          casier: el('input', { type: 'text', placeholder: 'ex : 3 G, C10 / 1' }), photo: el('input', { type: 'file', accept: 'image/*', capture: 'environment' })
+          casier: el('input', { type: 'text', placeholder: 'ex : A1, C10 / 1', value: casierImpose || '', list: 'st-liste-casiers' }), photo: el('input', { type: 'file', accept: 'image/*', capture: 'environment' })
         };
         var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
         function champ(lib, i) { return el('div', { class: 'champ' }, [el('label', {}, [lib]), i]); }
-        var fermer = modale('Ajouter une pièce', materiel, [
+        var choixMat = el('select', { class: 'st-select' }, mats().map(function (m) { return el('option', { value: m.nom }, [m.nom]); }));
+        choixMat.value = materiel;
+        choixMat.addEventListener('change', function () { materiel = choixMat.value; });
+        var fermer = modale('Ajouter une pièce', casierImpose ? 'Rangée dans le casier ' + casierImpose : materiel, [
+          casierImpose ? champ('Matériel', choixMat) : null, listeCasiers(),
           champ('Désignation', c.designation), champ('Référence', c.reference),
           el('div', { class: 'pp-deux' }, [champ('Quantité de départ', c.quantite), champ('Seuil', c.seuil)]),
           champ('Casier', c.casier), champ('Photo (facultatif)', c.photo),
