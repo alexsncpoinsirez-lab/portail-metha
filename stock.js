@@ -48,9 +48,13 @@
   // Repère écrit toujours de la même façon : majuscules, sans espace, « / » et « - » -> « - »
   // (« 3 G » = « 3G », « C10 / 1 » = « C10-1 », « B1/ 2 » = « B1-2 ») : impossible de créer deux fois le même rangement.
   function canonCode(c) {
-    return String(c || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    return String(c || '').toUpperCase().replace(/Ø/g, '0').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .replace(/\s*[\/\-_.]\s*/g, '-').replace(/\s+/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
   }
+  // lettre O et chiffre 0 : confondus pour chercher et comparer (« AO » trouve A0, « 00 » trouve O0),
+  // et le zéro s'affiche barré « Ø » pour qu'on ne lise jamais un O à la place
+  function plie(code) { return String(code || '').replace(/O/g, '0'); }
+  function affiche(code) { return String(code || '').replace(/0/g, 'Ø'); }
   function rangement(lib) {
     var m = /^\s*(casier|tiroir|armoire)\b\s*(.*)$/i.exec(String(lib || ''));
     return m ? { type: m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase(), code: canonCode(m[2]) } : { type: '', code: canonCode(lib) };
@@ -60,10 +64,10 @@
   function libelleRangement(lib) { var r = rangement(lib); return libelle(r.type || 'Casier', r.code); }
   function rangementTexte(lib) {
     var r = rangement(lib);
-    return r.type === 'Casier' ? '🗄 Casier ' + r.code : r.type === 'Tiroir' ? '🗃 Tiroir ' + r.code : r.type === 'Armoire' ? '🚪 Armoire ' + r.code : String(lib || '');
+    return r.type === 'Casier' ? '🗄 Casier ' + affiche(r.code) : r.type === 'Tiroir' ? '🗃 Tiroir ' + affiche(r.code) : r.type === 'Armoire' ? '🚪 Armoire ' + affiche(r.code) : String(lib || '');
   }
   // clé de comparaison : type + repère normalisé
-  function casierNorm(c) { if (!String(c || '').trim()) return ''; var r = rangement(c); return r.type + '|' + r.code; }
+  function casierNorm(c) { if (!String(c || '').trim()) return ''; var r = rangement(c); return r.type + '|' + plie(r.code); }
   // QR code fabriqué sur le téléphone (bibliothèque qrcode.js, hors ligne, rien n'est envoyé ailleurs)
   function qrDataUrl(texte, taille) {
     if (typeof window.qrcode !== 'function') return '';
@@ -451,7 +455,7 @@
           liste.forEach(function (g) {
             var bas = g.pieces.filter(function (p) { return p.stockBas; }).length;
             puces.appendChild(el('button', { class: 'st-casier' + (casierChoisi && casierNorm(casierChoisi) === g.cle ? ' actif' : ''), type: 'button', onclick: function () { casierChoisi = g.casier; afficher(); } }, [
-              el('b', {}, [g.cle === '~' ? g.casier : (g.code || g.casier)]), el('span', {}, [' ' + g.pieces.length]), bas ? el('span', { class: 'st-pastille st-pastille-mini' }, [String(bas)]) : null]));
+              el('b', {}, [g.cle === '~' ? g.casier : (affiche(g.code) || g.casier)]), el('span', {}, [' ' + g.pieces.length]), bas ? el('span', { class: 'st-pastille st-pastille-mini' }, [String(bas)]) : null]));
           });
           racine.appendChild(puces);
         });
@@ -518,23 +522,24 @@
           var a = analyser(champ.value);
           if (!champ.value.trim()) return;
           var gs = groupesCasiers().filter(function (g) { return g.cle !== '~' && (g.type ? (!a.type || g.type === a.type) : !a.type); });
-          var debut = gs.filter(function (g) { return g.code.indexOf(a.code) === 0; });
-          var dedans = gs.filter(function (g) { return a.code && g.code.indexOf(a.code) > 0; });
+          var q = plie(a.code);
+          var debut = gs.filter(function (g) { return plie(g.code).indexOf(q) === 0; });
+          var dedans = gs.filter(function (g) { return q && plie(g.code).indexOf(q) > 0; });
           var res = debut.concat(dedans).slice(0, 40);
           res.forEach(function (g) {
             liste.appendChild(el('button', { class: 'st-rgt-prop', type: 'button', onclick: function () { choisir(g.casier); } }, [
               el('span', {}, [g.type ? rangementTexte(g.casier) : '❔ ' + g.casier + ' (type à préciser)']), el('span', { class: 'st-sous' }, [g.pieces.length + ' pièce' + (g.pieces.length > 1 ? 's' : '')])]));
           });
-          var exact = a.code && gs.some(function (g) { return g.code === a.code && (!a.type || g.type === a.type); });
+          var exact = a.code && gs.some(function (g) { return plie(g.code) === q && (!a.type || g.type === a.type); });
           if (a.code && !exact && o.creation !== false) {
             var types = a.type ? [a.type] : ['Casier', 'Tiroir', 'Armoire'];
-            liste.appendChild(el('div', { class: 'st-rgt-creer' }, [el('span', { class: 'petit' }, ['« ' + a.code + ' » n’existe pas encore :'])].concat(types.map(function (t) {
+            liste.appendChild(el('div', { class: 'st-rgt-creer' }, [el('span', { class: 'petit' }, ['« ' + affiche(a.code) + ' » n’existe pas encore :'])].concat(types.map(function (t) {
               return el('button', { class: 'btn-second st-mini', type: 'button', onclick: function () {
                 var lib = libelle(t, a.code);
                 if (!confirm('Créer le rangement « ' + lib + ' » ?')) return;
                 saisir({ type: 'stock.casierAjout', nom: lib }); PM.toast(lib + ' ajouté');
                 choisir(lib);
-              } }, ['+ ' + (t === 'Casier' ? '🗄 ' : t === 'Tiroir' ? '🗃 ' : '🚪 ') + t + ' ' + a.code]);
+              } }, ['+ ' + (t === 'Casier' ? '🗄 ' : t === 'Tiroir' ? '🗃 ' : '🚪 ') + t + ' ' + affiche(a.code)]);
             }))));
           }
           if (!res.length && !(a.code && !exact)) liste.appendChild(el('p', { class: 'petit' }, ['Aucun rangement ne correspond.']));
