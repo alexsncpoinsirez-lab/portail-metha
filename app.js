@@ -301,6 +301,7 @@
     thermo: '<path d="M10 14.5V5a2 2 0 1 1 4 0v9.5a4 4 0 1 1-4 0zM12 9v7"/>',
     filtre: '<path d="M4 5h16l-6 7v6l-4 2v-8z"/>',
     agitation: '<path d="M12 3v18M12 12c-4 0-6-2-7-4M12 12c4 0 6 2 7 4M5 21h14"/>',
+    stock: '<path d="M3 8l9-5 9 5v10l-9 5-9-5zM3 8l9 5 9-5M12 13v10M7.5 5.5l9 5"/>',
     pompe: '<circle cx="10" cy="13" r="5.5"/><circle cx="10" cy="13" r="1.6"/><path d="M14 8.5h6v4M4.5 21h11M10 18.5V21"/>',
     document: '<path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6"/>',
     site: '<path d="M3 21h18M5 21V10l5-3v14M10 21V5l9 4v12M13 11h3M13 15h3"/>',
@@ -438,14 +439,15 @@
     vue.appendChild(liste);
   }
 
-  function ecranOutil(vue, id) {
+  function ecranOutil(vue, id, extra) {
     var t = trouverOutil(id);
     if (!t || t.outil.type !== 'interne') { location.hash = ''; return; }
     var mod = (window.MODULES || {})[t.outil.module];
     entete(t.outil.nom, t.site.nom, '#site/' + t.site.id);
     if (!mod) { vue.appendChild(el('div', { class: 'vide-msg' }, ['Module introuvable.'])); return; }
     mod.afficher(vue, {
-      outil: t.outil, site: t.site, apiUrl: apiSite(t.site.id), cle: cleSite(t.site.id)
+      outil: t.outil, site: t.site, apiUrl: apiSite(t.site.id), cle: cleSite(t.site.id),
+      params: extra || [] // ex. #outil/stock-rotte/<matériel>/<référence> (QR code d'une pièce)
     });
   }
 
@@ -571,7 +573,13 @@
       var rapides = s.outils.filter(function (o) { return o.type === 'interne'; });
       var url = el('input', { type: 'url', value: apiSite(s.id), placeholder: 'https://script.google.com/macros/s/…/exec' });
       if (s.apiUrl) { url.readOnly = true; url.title = 'Adresse fixée dans l’appli (config.js)'; }
-      var cle = el('input', { type: 'text', value: cleSite(s.id), placeholder: 'Clé du site', autocomplete: 'off' });
+      // clé masquée (••••) : visible seulement en appuyant sur « Afficher »
+      var cle = el('input', { type: 'password', value: cleSite(s.id), placeholder: 'Clé du site', autocomplete: 'off' });
+      var voirCle = el('button', { class: 'btn-second', type: 'button', style: 'margin-top:6px', onclick: function () {
+        var cache = cle.type === 'password';
+        cle.type = cache ? 'text' : 'password';
+        voirCle.textContent = cache ? 'Masquer' : 'Afficher';
+      } }, ['Afficher']);
       var res = el('div', { class: 'petit' });
       var zone = el('div');
       vue.appendChild(el('div', { class: 'bandeau', style: '--n:' + (s.neon || s.couleur) }, [
@@ -580,20 +588,22 @@
           ? 'Outils concernés : ' + rapides.map(function (o) { return o.nom; }).join(', ')
           : 'Aucun outil en version rapide pour l’instant']),
         el('div', { class: 'champ' }, [el('label', {}, ['Adresse du serveur du site']), url]),
-        el('div', { class: 'champ' }, [el('label', {}, ['Clé du site']), cle]),
+        el('div', { class: 'champ' }, [el('label', {}, ['Clé du site']), cle, voirCle]),
         el('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' }, [
           el('button', { class: 'btn-second', onclick: function () {
             var u = url.value.trim(), k = cle.value.trim();
             if (u && !s.apiUrl && !RE_EXEC.test(u)) { res.textContent = '✗ Adresse invalide : elle doit commencer par https://script.google.com/macros/s/ et finir par /exec'; return; }
             if (!u) { Prefs.set('api_site_' + s.id, ''); Prefs.set('cle_site_' + s.id, k); res.textContent = 'Enregistré (vide)'; return; }
-            // on teste AVANT d'enregistrer : une faute de frappe n'écrase plus des réglages qui marchaient
+            // adresse figée dans l'appli : la clé est enregistrée tout de suite (le test dit ensuite si elle est bonne)
+            if (s.apiUrl) Prefs.set('cle_site_' + s.id, k);
+            // adresse saisie à la main : on teste AVANT d'enregistrer (une faute de frappe n'écrase plus des réglages qui marchaient)
             res.textContent = 'Test en cours…';
             Api.appeler(u, { action: 'ping', cle: k }, 20000).then(function (j) {
               if (!s.apiUrl) Prefs.set('api_site_' + s.id, u);
               Prefs.set('cle_site_' + s.id, k);
               res.textContent = '✓ Connecté à « ' + (j.nomSite || 'serveur') + ' » — enregistré';
               Envoi.vider();
-            })['catch'](function (e) { res.textContent = '✗ ' + e.message + ' — rien n’a été modifié'; });
+            })['catch'](function (e) { res.textContent = '✗ ' + e.message + (s.apiUrl ? ' — clé enregistrée, vérifie-la' : ' — rien n’a été modifié'); });
           } }, ['Enregistrer et tester']),
           el('button', { class: 'btn-second', onclick: function () {
             partagerLien(lienConfig([s.id]), 'Portail Métha — ' + s.nom, zone);
@@ -701,7 +711,7 @@
       p = [''];
     }
     if (p[0] === 'site') ecranSite(vue, p[1]);
-    else if (p[0] === 'outil') ecranOutil(vue, p[1]);
+    else if (p[0] === 'outil') ecranOutil(vue, p[1], p.slice(2).map(function (x) { try { return decodeURIComponent(x); } catch (e) { return x; } }));
     else if (p[0] === 'reglages') ecranReglages(vue);
     else ecranAccueil(vue);
   }

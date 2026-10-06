@@ -34,7 +34,8 @@ var PORTAIL_CONFIG = {
         { id: 'analyses-rotte', nom: 'Analyses digestat', description: 'Résultats Novatech AOV / TAC / MS — Rotte', icone: 'analyse', type: 'interne', module: 'analyses' },
         { id: 'bougies',   nom: 'Suivi Bougies',     description: 'Tension des 12 bougies du moteur de cogénération', icone: 'bougie', type: 'interne', module: 'bougies' },
         { id: 'agitation', nom: 'Hauteur agitation', description: 'Hauteur des hélices des agitateurs (tours / mètres)', icone: 'agitation', type: 'interne', module: 'agitation' },
-        { id: 'pompes-rotte', nom: 'Suivi des pompes', description: 'Remplacement de pièces — pompes, broyeur, séparateur', icone: 'pompe', type: 'interne', module: 'pompes' }
+        { id: 'pompes-rotte', nom: 'Suivi des pompes', description: 'Remplacement de pièces — pompes, broyeur, séparateur', icone: 'pompe', type: 'interne', module: 'pompes' },
+        { id: 'stock-rotte', nom: 'Stock pièces', description: 'Pièces détachées : quantités, casiers, à commander, QR codes', icone: 'stock', type: 'interne', module: 'stock' }
       ]
     },
     {
@@ -55,7 +56,8 @@ var PORTAIL_CONFIG = {
         },
         { id: 'nh3',         nom: 'Suivi NH3',            description: 'Analyses NH3 et charbon actif',      icone: 'filtre',      type: 'interne', module: 'nh3' },
         { id: 'analyses-arr', nom: 'Analyses digestat', description: 'Résultats Novatech AOV / TAC / MS — Arraincourt', icone: 'analyse', type: 'interne', module: 'analyses' },
-        { id: 'pompes-arr', nom: 'Suivi des pompes', description: 'Remplacement de pièces — pompes, broyeurs, séparateur', icone: 'pompe', type: 'interne', module: 'pompes' }
+        { id: 'pompes-arr', nom: 'Suivi des pompes', description: 'Remplacement de pièces — pompes, broyeurs, séparateur', icone: 'pompe', type: 'interne', module: 'pompes' },
+        { id: 'stock-arr', nom: 'Stock pièces', description: 'Pièces détachées : quantités, casiers, à commander, QR codes', icone: 'stock', type: 'interne', module: 'stock' }
       ]
     }
   ],

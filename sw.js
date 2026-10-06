@@ -1,11 +1,11 @@
 /* Service worker : garde l'appli sur le téléphone -> ouverture instantanée, même sans réseau.
    Pour publier une mise à jour : changer le numéro de VERSION ci-dessous. */
-var VERSION = 'portail-metha-v33';
-var FICHIERS = ['./', 'index.html', 'styles.css', 'config.js', 'app.js', 'rondes.js', 'nh3.js', 'bougies.js', 'agitation.js', 'analyses.js', 'pompes.js', 'intro.js', 'icons/intro-logo.png', 'icons/intro-voix.mp3', 'icons/logo-prodeval.png', 'icons/logo-wangen.png', 'icons/logo-vogelsang.png', 'icons/logo-bauer.png', 'icons/alu.jpg',
+var VERSION = 'portail-metha-v36';
+var FICHIERS = ['./', 'index.html', 'styles.css', 'config.js', 'app.js', 'rondes.js', 'nh3.js', 'bougies.js', 'agitation.js', 'analyses.js', 'pompes.js', 'stock.js', 'intro.js', 'icons/intro-logo.png', 'icons/intro-voix.mp3', 'icons/logo-prodeval.png', 'icons/logo-wangen.png', 'icons/logo-vogelsang.png', 'icons/logo-bauer.png', 'icons/alu.jpg',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 // Fichiers indispensables : s'il en manque un, la mise à jour attend. Les images peuvent manquer sans tout bloquer.
-var ESSENTIELS = ['./', 'index.html', 'styles.css', 'config.js', 'app.js', 'rondes.js', 'nh3.js', 'bougies.js', 'agitation.js', 'analyses.js', 'pompes.js'];
+var ESSENTIELS = ['./', 'index.html', 'styles.css', 'config.js', 'app.js', 'rondes.js', 'nh3.js', 'bougies.js', 'agitation.js', 'analyses.js', 'pompes.js', 'stock.js'];
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(VERSION).then(function (c) {
     return Promise.all(FICHIERS.map(function (f) {
