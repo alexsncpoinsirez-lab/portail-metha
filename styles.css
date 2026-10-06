@@ -1028,3 +1028,10 @@ body.futur .st-partage { color: #7fd3ff; }
 .st-plein-fl { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 64px; border: 0; border-radius: 12px; background: rgba(0,0,0,.45); color: #fff; font-size: 34px; line-height: 1; cursor: pointer; }
 .st-plein-g { left: 8px; } .st-plein-d { right: 8px; }
 .st-btn-photo { margin-top: 10px; width: 100%; }
+
+/* ---------- Réglages : journal réseau ---------- */
+.journal { display: grid; gap: 4px; max-height: 340px; overflow: auto; font-family: var(--mono, monospace); font-size: 11.5px; }
+.journal-ligne { display: grid; grid-template-columns: 9.5em minmax(0, 1fr) 4em; gap: 2px 8px; padding: 5px 6px; border-radius: 6px; background: rgba(34,227,161,.06); }
+.journal-ligne > span:last-child { grid-column: 1 / -1; color: var(--texte-2, #93a6c2); overflow-wrap: anywhere; }
+.journal-ligne.ko { background: rgba(232,163,61,.12); }
+.journal-ligne.ko > span:last-child { color: #e8a33d; }

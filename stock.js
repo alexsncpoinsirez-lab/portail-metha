@@ -232,6 +232,7 @@
         ouvrirQuantite(p, true);
       }
       function charger(premier) {
+        dernierChargement = Date.now();
         return api('stock.tout', {}, 90000).then(function (j) {
           delete j.ok; T = j; PM.DB.set(K.tout, j);
           return nettoyerAttente().then(function () {
@@ -244,13 +245,23 @@
             vue.appendChild(el('div', { class: 'vide-msg' }, ['Impossible de charger le stock.', el('br'), el('span', { class: 'petit' }, [e.message]), el('br'), el('br'),
               el('button', { class: 'btn-second', onclick: function () { charger(true); } }, ['Réessayer']), ' ',
               el('button', { class: 'btn-second', onclick: function () { location.hash = 'reglages'; } }, ['Ouvrir les réglages'])]));
-          } else PM.toast('Hors ligne : stock du dernier chargement');
+          } else PM.toast((PM.raison ? PM.raison(e) : 'Hors ligne') + ' : stock du dernier chargement', 4000);
         });
       }
-      // toutes les saisies parties -> on recharge (quantités partagées à jour)
+      // toutes les saisies parties -> on recharge (quantités partagées à jour), mais :
+      // - pas pendant l'inventaire (l'écran ne bouge pas sous les doigts) : rechargé en sortant ;
+      // - au plus une fois par minute (le serveur n'est pas noyé de rechargements complets).
+      var dernierChargement = 0, rechargePrevue = null, rechargeEnAttente = false;
+      function rechargerPlusTard() {
+        if (!actif() || modeDemo) return;
+        if (ecran === 'inventaire') { rechargeEnAttente = true; return; }
+        var reste = 60000 - (Date.now() - dernierChargement);
+        if (reste <= 0) { rechargeEnAttente = false; charger(false); return; }
+        if (!rechargePrevue) rechargePrevue = setTimeout(function () { rechargePrevue = null; rechargerPlusTard(); }, reste);
+      }
       PM.Envoi.surChangement(function (n) {
         if (!actif() || n || !attente.length || modeDemo) return;
-        charger(false);
+        rechargerPlusTard();
       });
       function nettoyerAttente() {
         return Promise.all([PM.DB.listerEnvois(), PM.DB.get(K.attente)]).then(function (r) {
@@ -306,7 +317,11 @@
           historique: ecranHistorique, communes: ecranCommunes, controle: ecranControle, photos: ecranPhotos }[ecran] || ecranMateriels)(racine);
         window.scrollTo(0, y);
       }
-      function aller(e, m) { ecran = e; if (m !== undefined) materiel = m; filtre = ''; afficher(); window.scrollTo(0, 0); }
+      function aller(e, m) {
+        var sortieInventaire = ecran === 'inventaire' && e !== 'inventaire';
+        ecran = e; if (m !== undefined) materiel = m; filtre = ''; afficher(); window.scrollTo(0, 0);
+        if (sortieInventaire && rechargeEnAttente) rechargerPlusTard();
+      }
 
       function barreOutils() {
         function b(txt, titre, fn, actifSi) {
@@ -916,7 +931,7 @@
         f.addEventListener('change', function () {
           var fichier = f.files[0]; f.remove();
           if (!fichier) return;
-          redimensionner(fichier, 1280, 0.75).then(function (data) {
+          redimensionner(fichier, 1024, 0.7).then(function (data) {
             saisir(Object.assign({ type: 'stock.photo', photo: data, ajout: true }, refPiece(p)), true);
             PM.toast('Photo enregistrée');
           })['catch'](function () { PM.toast('Impossible de lire cette photo.'); });
@@ -962,7 +977,7 @@
           if (ref && pieces(materiel).some(function (p) { return p.reference === ref; }) && !confirm('Cette référence existe déjà dans ' + materiel + '. L’ajouter quand même ?')) return;
           var piece = { designation: c.designation.value.trim(), reference: ref, quantiteStock: q, seuil: s, casier: c.casier.valeur() };
           var fichier = c.photo.files[0];
-          (fichier ? redimensionner(fichier, 1280, 0.75) : Promise.resolve('')).then(function (data) {
+          (fichier ? redimensionner(fichier, 1024, 0.7) : Promise.resolve('')).then(function (data) {
             if (data) piece.photo = data;
             fermer(); saisir({ type: 'stock.piece', materiel: materiel, piece: piece }, !!data); PM.toast('Pièce ajoutée');
           })['catch'](function () { msg.textContent = 'Impossible de lire la photo choisie.'; msg.hidden = false; });
@@ -1085,7 +1100,7 @@
         if (!modeDemo) api('stock.commander', {}, 60000).then(function (j) {
           cmdServeur = j.liste || []; PM.DB.set(cacheCmd, cmdServeur);
           if (ecran === 'commander' && actif() && !document.querySelector('.ag-modale')) rendre();
-        })['catch'](function () { PM.toast('Hors ligne : commandes du dernier chargement'); });
+        })['catch'](function (e) { PM.toast((PM.raison ? PM.raison(e) : 'Hors ligne') + ' : commandes du dernier chargement', 4000); });
         else if (cmdServeur === null) { cmdServeur = toutesPieces().filter(function (p) { return p.quantiteACommander > 0; }).map(function (p) { return { origine: 'seuil', statut: '', materiel: p.materiel, reference: p.reference, designation: p.designation, casier: p.casier, quantite: p.quantiteACommander }; }); }
         if (cmdServeur !== null) rendre();
       }

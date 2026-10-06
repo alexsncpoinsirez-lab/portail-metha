@@ -107,7 +107,7 @@
             vue.innerHTML = '';
             vue.appendChild(el('div', { class: 'vide-msg' }, ['Impossible de charger les analyses.', el('br'), el('span', { class: 'petit' }, [e.message]), el('br'), el('br'),
               el('button', { class: 'btn-second', onclick: function () { location.hash = 'reglages'; } }, ['Ouvrir les réglages'])]));
-          } else PM.toast('Hors ligne : analyses du dernier chargement');
+          } else PM.toast((PM.raison ? PM.raison(e) : 'Hors ligne') + ' : analyses du dernier chargement', 4000);
         });
       }
 

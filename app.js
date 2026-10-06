@@ -117,31 +117,79 @@
     };
   })();
 
+  /* ---------- Journal réseau : les 40 derniers échanges (Réglages) ---------- */
+  var Journal = (function () {
+    var cle = 'pm_journal_reseau', l = [];
+    try { l = JSON.parse(localStorage.getItem(cle) || '[]') || []; } catch (e) { l = []; }
+    return {
+      noter: function (x) { l.unshift(x); if (l.length > 40) l.length = 40; try { localStorage.setItem(cle, JSON.stringify(l)); } catch (e) {} },
+      lister: function () { return l.slice(); },
+      vider: function () { l = []; try { localStorage.removeItem(cle); } catch (e) {} }
+    };
+  })();
+  // Erreur typée : reseau (pas de réseau / coupure), delai (serveur trop lent), occupe, page (le serveur
+  // renvoie une page Google : autorisation ou déploiement), serveur (le serveur a répondu une vraie erreur).
+  function erreur(type, message) { var e = new Error(message); e.type = type; e.serveur = type === 'serveur'; return e; }
+  function raison(e) {
+    var t = e && e.type;
+    return t === 'reseau' ? 'Pas de réseau' : t === 'delai' ? 'Serveur trop lent' : t === 'occupe' ? 'Serveur occupé'
+      : t === 'page' ? 'Serveur indisponible' : 'Erreur du serveur';
+  }
+  function nomSiteDeUrl(u) {
+    try { var s = CFG.sites.filter(function (x) { return apiSite(x.id) === u; })[0]; return s ? s.nom : ''; } catch (e) { return ''; }
+  }
+
   /* ---------- Appels au serveur Apps Script ---------- */
   var Api = {
     // text/plain évite la « pré-vérification » CORS, Apps Script accepte très bien.
+    // Lectures : au moins 60 s d'attente et UN nouvel essai automatique si le serveur est lent ou occupé
+    // (Apps Script qui « se réveille » + gros tableaux + 4G faible dépassent souvent 25 s).
     appeler: function (apiUrl, corps, delaiMs) {
-      if (!apiUrl) return Promise.reject(new Error('URL du serveur non renseignée (Réglages)'));
-      var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, delaiMs || 25000) : null;
-      return fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(corps),
-        redirect: 'follow',
-        signal: ctrl ? ctrl.signal : undefined
-      })['catch'](function (e) {
-        if (timer) clearTimeout(timer);
-        if (e && e.name === 'AbortError') throw new Error('Pas de réponse du serveur (délai dépassé)');
-        throw new Error('Réseau indisponible ou serveur injoignable');
-      }).then(function (r) {
-        if (timer) clearTimeout(timer);
-        if (!r.ok) throw new Error('Serveur : code ' + r.status);
-        return r.json();
-      }).then(function (j) {
-        if (!j || j.ok !== true) { var err = new Error((j && j.erreur) || 'Réponse invalide du serveur'); err.serveur = true; throw err; }
-        return j;
-      });
+      if (!apiUrl) return Promise.reject(erreur('serveur', 'URL du serveur non renseignée (Réglages)'));
+      var action = String(corps && corps.action || '');
+      var lecture = action !== 'enregistrer' && action !== 'ping';
+      var delai = lecture ? Math.max(delaiMs || 0, 60000) : (delaiMs || 60000);
+      function essai(n) {
+        var t0 = Date.now();
+        function noter(r, m) { Journal.noter({ t: t0, a: action, s: nomSiteDeUrl(apiUrl), d: Date.now() - t0, r: r, m: m || '', n: n }); }
+        if (navigator.onLine === false) { var e0 = erreur('reseau', 'Pas de réseau : le téléphone est hors connexion.'); noter('reseau', e0.message); return Promise.reject(e0); }
+        var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, delai) : null;
+        return fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(corps),
+          redirect: 'follow',
+          signal: ctrl ? ctrl.signal : undefined
+        })['catch'](function (e) {
+          if (timer) clearTimeout(timer);
+          if (e && e.name === 'AbortError') throw erreur('delai', 'Le serveur n’a pas répondu en ' + Math.round(delai / 1000) + ' s.');
+          throw erreur('reseau', navigator.onLine === false ? 'Pas de réseau : le téléphone est hors connexion.'
+            : 'Connexion coupée pendant l’échange (réseau faible, écran éteint ou appli quittée ?).');
+        }).then(function (r) {
+          if (timer) clearTimeout(timer);
+          if (!r.ok) throw erreur(r.status === 429 || r.status >= 500 ? 'occupe' : 'page', 'Serveur : code ' + r.status);
+          return r.text();
+        }).then(function (txt) {
+          var j;
+          try { j = JSON.parse(txt); } catch (x) {
+            throw erreur('page', 'Le serveur a renvoyé une page Google au lieu des données (autorisation à refaire ou déploiement en cours ?).');
+          }
+          if (!j || j.ok !== true) {
+            var m = (j && j.erreur) || 'Réponse invalide du serveur';
+            throw erreur(/lock|verrou|occup|too many|trop de|simultan|service invoked/i.test(m) ? 'occupe' : 'serveur', m);
+          }
+          noter(j.occupe ? 'occupe' : 'ok', j.occupe ? 'serveur occupé : renvoi plus tard' : (j.copie ? 'copie rapide' : ''));
+          return j;
+        }).then(null, function (e) {
+          if (!e.type) e = erreur('serveur', e.message || String(e));
+          noter(e.type, e.message);
+          var refaire = lecture && n === 0 && (e.type === 'delai' || e.type === 'occupe' || e.type === 'page' || (e.type === 'reseau' && navigator.onLine !== false));
+          if (!refaire) throw e;
+          return new Promise(function (ok) { setTimeout(ok, 2500); }).then(function () { return essai(1); });
+        });
+      }
+      return essai(0);
     }
   };
 
@@ -171,11 +219,11 @@
     }
     // Lot : saisies qui se suivent pour un même site (sans mélanger l'ordre), 25 max ; une photo part seule.
     function preparerLot(liste, siteId) {
-      var dusite = liste.filter(function (x) { return !x.rejete && x.siteId === siteId; });
+      var dusite = liste.filter(function (x) { return !x.rejete && x.siteId === siteId; }); // lots de 8 : réponse du serveur toujours rapide
       var premier = dusite[0];
       if (premier.photo || premier.seul) return [premier];
       var lot = [premier];
-      for (var i = 1; i < dusite.length && lot.length < 25; i++) {
+      for (var i = 1; i < dusite.length && lot.length < 8; i++) {
         if (dusite[i].photo || dusite[i].seul) break;
         lot.push(dusite[i]);
       }
@@ -188,7 +236,7 @@
         action: 'enregistrer',
         cle: cleSite(siteId),
         items: lot.map(function (x) { return x.payload; })
-      }, avecPhoto ? 90000 : 60000).then(function (j) {
+      }, avecPhoto ? 120000 : 90000).then(function (j) {
         delete erreurs[siteId];
         var rejets = {}, restants = {};
         (j.rejets || []).forEach(function (r) { if (r && r.id) rejets[r.id] = r.erreur || 'Refusée par le serveur'; });
@@ -201,11 +249,12 @@
           return DB.supprimerEnvoi(x.seq);
         })).then(function () {
           if (nbRefus) toast('⚠ ' + nbRefus + ' saisie' + (nbRefus > 1 ? 's refusées' : ' refusée') + ' par le serveur — voir Réglages', 5000);
+          if (j.occupe) { erreurs[siteId] = { message: 'Serveur occupé (un autre téléphone envoie) : nouvel essai automatique', quand: Date.now() }; return 'site'; }
           return true;
         });
       }, function (e) {
         var msg = (e && e.message) || 'Erreur inconnue';
-        erreurs[siteId] = { message: msg, quand: Date.now() };
+        erreurs[siteId] = { message: raison(e) + ' — ' + msg, quand: Date.now() };
         console.warn('Envoi différé (' + siteId + ') :', msg);
         if (!e || !e.serveur || /cl[ée] du site/i.test(msg)) return 'site'; // réseau ou clé : on réessaiera tel quel
         // Le serveur a répondu une erreur pour tout le lot : on isole la saisie fautive
@@ -219,19 +268,26 @@
         return DB.majEnvoi(x).then(function () { return 'saisie'; });
       });
     }
-    function vider() {
-      if (enCours || !navigator.onLine) return notifier();
+    // Après un échec, le site attend un peu avant le prochain essai (20 s, 40 s, 80 s, 2 min max) :
+    // on n'encombre pas un serveur déjà lent. « Envoyer maintenant », Renvoyer et le retour du réseau passent outre.
+    var pause = {}, palier = {};
+    function vider(force) {
+      if (enCours || navigator.onLine === false) return notifier();
       enCours = true;
       var sitesEnPanne = {}, dejaTentees = {}, tours = 0;
       function suivant() {
         if (++tours > 200) return; // sécurité
         return DB.listerEnvois().then(function (liste) {
           liste = (liste || []).filter(function (x) { return !x.rejete && !dejaTentees[x.seq]; });
-          var aFaire = liste.filter(function (x) { return !sitesEnPanne[x.siteId]; });
+          var aFaire = liste.filter(function (x) { return !sitesEnPanne[x.siteId] && (force === true || !(pause[x.siteId] > Date.now())); });
           if (!aFaire.length) return;
           var lot = preparerLot(liste, aFaire[0].siteId);
           return envoyerLot(lot).then(function (r) {
-            if (r === 'site') sitesEnPanne[lot[0].siteId] = true;         // serveur injoignable : on passe à l'autre site
+            var sid = lot[0].siteId;
+            if (r === 'site') {                                              // serveur injoignable ou occupé : on passe à l'autre site
+              sitesEnPanne[sid] = true;
+              palier[sid] = Math.min((palier[sid] || 10000) * 2, 120000); pause[sid] = Date.now() + palier[sid];
+            } else if (r === true) { delete pause[sid]; delete palier[sid]; }
             else if (r === 'saisie') dejaTentees[lot[0].seq] = true;      // saisie fautive : on passe aux suivantes
             return suivant();                                              // 'lot' : renvoi une par une tout de suite
           });
@@ -251,12 +307,13 @@
           });
       },
       vider: vider,
+      forcer: function () { return vider(true); },
       compter: notifier,
       // l'écouteur est oublié dès qu'on change d'écran (évite qu'ils s'empilent)
       surChangement: function (f) { f.__ecran = numeroEcran; ecouteurs.push(f); },
       erreurs: function () { return erreurs; },
       refusees: function () { return DB.listerEnvois().then(function (l) { return (l || []).filter(function (x) { return x.rejete; }); }); },
-      renvoyer: function (x) { delete x.rejete; delete x.erreur; x.essais = 0; x.seul = true; return DB.majEnvoi(x).then(vider); },
+      renvoyer: function (x) { delete x.rejete; delete x.erreur; x.essais = 0; x.seul = true; return DB.majEnvoi(x).then(function () { return vider(true); }); },
       abandonner: function (x) { return DB.supprimerEnvoi(x.seq).then(notifier); }
     };
   })();
@@ -288,7 +345,7 @@
       e.textContent = 'À jour';
     }
   }
-  window.addEventListener('online', function () { Envoi.vider(); });
+  window.addEventListener('online', function () { Envoi.forcer(); });
   window.addEventListener('offline', function () { Envoi.compter(); });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) Envoi.vider(); });
   setInterval(function () { Envoi.vider(); }, 30000);
@@ -537,7 +594,7 @@
         DB.durable().then(function (ok) {
           if (!ok) corps.appendChild(el('p', { class: 'petit', style: 'color:#ff6b6b' }, ['⚠ Ce téléphone ne garde pas les saisies en mémoire (navigation privée ?) : elles seront perdues si l’appli est fermée avant l’envoi.']));
         });
-        if (attente) corps.appendChild(el('button', { class: 'btn-second', onclick: function () { toast('Envoi…'); Envoi.vider().then(remplir); } }, ['Envoyer maintenant']));
+        if (attente) corps.appendChild(el('button', { class: 'btn-second', onclick: function () { toast('Envoi…'); Envoi.forcer().then(remplir); } }, ['Envoyer maintenant']));
         if (!refusees.length) return;
         corps.appendChild(el('p', { class: 'petit', style: 'margin-top:10px;font-weight:700' }, ['Saisies refusées par le serveur (' + refusees.length + ')']));
         refusees.forEach(function (x) {
@@ -563,9 +620,37 @@
     return bloc;
   }
 
+  /* Bloc « Journal réseau » : ce qui s'est passé avec chaque serveur (heure, outil, durée, résultat) */
+  function blocJournal() {
+    var LIB = { ok: '✓', reseau: '📵 Pas de réseau', delai: '⏳ Trop lent', occupe: '⏸ Occupé', page: '⚠ Page Google', serveur: '✗ Erreur serveur' };
+    var bloc = el('div', { class: 'bandeau' }, [el('div', { style: 'font-weight:700;margin-bottom:6px' }, ['Journal réseau']),
+      el('p', { class: 'petit' }, ['Les 40 derniers échanges avec les serveurs. En cas de souci, fais une capture de cette liste.'])]);
+    var liste = el('div', { class: 'journal' });
+    bloc.appendChild(liste);
+    function remplir() {
+      liste.innerHTML = '';
+      var l = Journal.lister();
+      if (!l.length) { liste.appendChild(el('p', { class: 'petit' }, ['Rien pour l’instant.'])); return; }
+      l.forEach(function (x) {
+        var d = new Date(x.t);
+        liste.appendChild(el('div', { class: 'journal-ligne' + (x.r === 'ok' ? '' : ' ko') }, [
+          el('span', {}, [d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString('fr-FR')]),
+          el('span', {}, [(x.s ? x.s + ' · ' : '') + x.a + (x.n ? ' (2e essai)' : '')]),
+          el('span', {}, [(x.d / 1000).toFixed(1) + ' s']),
+          el('span', {}, [(LIB[x.r] || x.r) + (x.m && x.r !== 'ok' ? ' — ' + x.m : (x.m ? ' · ' + x.m : ''))])]));
+      });
+    }
+    remplir();
+    bloc.appendChild(el('div', { style: 'display:flex;gap:8px;margin-top:8px;flex-wrap:wrap' }, [
+      el('button', { class: 'btn-second', onclick: remplir }, ['Actualiser']),
+      el('button', { class: 'btn-second', onclick: function () { Journal.vider(); remplir(); } }, ['Effacer'])]));
+    return bloc;
+  }
+
   function ecranReglages(vue) {
     entete('Réglages', 'Connexion aux serveurs Apps Script', '#');
     vue.appendChild(blocEnvois());
+    vue.appendChild(blocJournal());
     vue.appendChild(el('p', { class: 'petit' }, [
       'Chaque site a son propre serveur. Colle son adresse (se termine par /exec) et sa clé : tous les outils « version rapide » du site s’en servent.'
     ]));
@@ -721,7 +806,7 @@
   var VERSION_APP = '1.10.0';
 
   /* ---------- Exposé aux modules ---------- */
-  window.PM = { apiSite: apiSite, cleSite: cleSite, el: el, $: $, toast: toast, Prefs: Prefs, DB: DB, Api: Api, Envoi: Envoi, uid: uid, icone: icone, nombre: nombre };
+  window.PM = { raison: raison, Journal: Journal, apiSite: apiSite, cleSite: cleSite, el: el, $: $, toast: toast, Prefs: Prefs, DB: DB, Api: Api, Envoi: Envoi, uid: uid, icone: icone, nombre: nombre };
   window.MODULES = window.MODULES || {};
 
   /* ---------- Démarrage ---------- */
