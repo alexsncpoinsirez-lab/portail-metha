@@ -26,8 +26,10 @@
   function norm(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); }
   function lienSur(u) { u = String(u || '').trim(); return /^https?:\/\//i.test(u) ? u : ''; }
   // les liens « uc?export=view » de Drive s'affichent mal : on passe par la miniature Drive
+  // plusieurs photos par pièce : un lien par ligne dans la cellule Photo
+  function liensPhotos(u) { return String(u || '').split(/\s*[\n|]\s*/).filter(function (x) { return /^data:image\//.test(x) || lienSur(x); }); }
   function urlPhoto(u) {
-    u = String(u || '').trim();
+    u = liensPhotos(u)[0] || '';
     if (/^data:image\//.test(u)) return u;
     if (!lienSur(u)) return '';
     var m = /[?&]id=([\w-]{10,})/.exec(u) || /\/d\/([\w-]{10,})/.exec(u);
@@ -159,8 +161,8 @@
       else if (a.type === 'stock.casier') cible.casier = a.casier;
       else if (a.type === 'stock.designation') cible.designation = a.nouvelle;
       else if (a.type === 'stock.reference') { cible.reference = a.nouvelle; cible.partage = false; }
-      else if (a.type === 'stock.photo') cible.photo = a.photo;
-      else if (a.type === 'stock.retirerPhoto') cible.photo = '';
+      else if (a.type === 'stock.photo') cible.photo = (a.ajout ? liensPhotos(cible.photo) : []).concat([a.photo]).join('\n');
+      else if (a.type === 'stock.retirerPhoto') cible.photo = a.lien ? liensPhotos(cible.photo).filter(function (x) { return x !== a.lien; }).join('\n') : '';
       cible.enAttente = true;
     });
     mats.forEach(function (m) {
@@ -348,7 +350,9 @@
             var g = el('div', { class: 'st-galerie' });
             liste.forEach(function (p) {
               g.appendChild(el('div', { class: 'st-vignette' }, [
-                el('img', { src: miniature(p.photo), alt: p.designation || p.reference, loading: 'lazy', onclick: function () { pleinEcran(p.photo); } }),
+                el('div', { class: 'st-vignette-img' }, [
+                  el('img', { src: miniature(p.photo), alt: p.designation || p.reference, loading: 'lazy', onclick: function () { pleinEcran(liensPhotos(p.photo), 0); } }),
+                  liensPhotos(p.photo).length > 1 ? el('span', { class: 'st-nb-photos' }, ['📷 ' + liensPhotos(p.photo).length]) : null]),
                 el('button', { class: 'st-vignette-txt', type: 'button', onclick: function () { ouvrirFiche(p); } }, [
                   el('b', {}, [p.designation || p.reference]),
                   el('div', { class: 'st-sous' }, [(p.reference ? p.reference + ' · ' : '') + p.materiel + (p.casier ? ' · ' + rangementTexte(p.casier) : '')])])]));
@@ -463,7 +467,7 @@
             el('td', {}, [p.materiel]), cellQte, actions]);
         }
         return el('tr', { class: classe }, [
-          el('td', { class: 'st-ref' }, [p.reference || '—', urlPhoto(p.photo) ? el('button', { class: 'pp-icone', type: 'button', title: 'Voir la photo', onclick: function () { pleinEcran(p.photo); } }, ['📷']) : null]),
+          el('td', { class: 'st-ref' }, [p.reference || '—', urlPhoto(p.photo) ? el('button', { class: 'pp-icone', type: 'button', title: 'Voir la photo', onclick: function () { pleinEcran(liensPhotos(p.photo), 0); } }, ['📷']) : null]),
           el('td', {}, [el('span', {}, [p.designation]), badges[0], badges[1], badges[2], sous.length ? el('div', { class: 'st-sous' }, [sous.join(' · ')]) : null]),
           el('td', {}, [p.casier ? rangementTexte(p.casier) : '']), cellQte, actions]);
       }
@@ -762,14 +766,17 @@
             p.cotes ? ligne('Côtes', p.cotes) : [], p.substitution ? ligne('Substitution', p.substitution) : [], p.reperes ? ligne('Repères', p.reperes) : []
           ).forEach(function (n) { dl.appendChild(n); });
           corps.appendChild(dl);
-          var src = urlPhoto(p.photo);
-          corps.appendChild(el('div', { class: 'st-section' }, [el('div', { class: 'st-section-titre' }, ['Photo',
-            el('button', { class: 'pp-icone', type: 'button', title: src ? 'Remplacer la photo' : 'Ajouter une photo', onclick: function () { choisirPhoto(p); } }, [src ? '✎' : '+'])]),
-            src ? el('div', { class: 'st-photo' }, [el('img', { src: src, alt: 'Photo de la pièce', onclick: function () { pleinEcran(p.photo); } }),
-              el('button', { class: 'pp-icone pp-danger', type: 'button', title: 'Retirer la photo', onclick: function () {
-                if (confirm('Retirer la photo de cette pièce ?')) saisir(Object.assign({ type: 'stock.retirerPhoto' }, refPiece(p)));
-              } }, ['🗑'])])
-              : el('p', { class: 'petit' }, [p.photo && !lienSur(p.photo) ? 'Pas encore de vraie photo (« ' + p.photo + ' ») : touche + pour en prendre une.' : 'Aucune photo pour l’instant.'])]));
+          var liens = liensPhotos(p.photo);
+          corps.appendChild(el('div', { class: 'st-section' }, [el('div', { class: 'st-section-titre' }, ['Photos' + (liens.length ? ' (' + liens.length + ')' : ''),
+            liens.length < 8 ? el('button', { class: 'pp-icone', type: 'button', title: 'Ajouter une photo', onclick: function () { choisirPhoto(p); } }, ['+']) : null]),
+            liens.length ? el('div', { class: 'st-photos' }, liens.map(function (u, i) {
+              return el('div', { class: 'st-photo-mini' }, [
+                el('img', { src: urlPhoto(u).replace(/&sz=w\d+$/, '&sz=w400'), alt: 'Photo ' + (i + 1), loading: 'lazy', onclick: function () { pleinEcran(liens, i); } }),
+                el('button', { class: 'pp-icone pp-danger', type: 'button', title: 'Retirer cette photo', onclick: function () {
+                  if (confirm('Retirer cette photo ?')) saisir(Object.assign({ type: 'stock.retirerPhoto', lien: u }, refPiece(p)));
+                } }, ['🗑'])]);
+            }))
+              : el('p', { class: 'petit' }, [p.photo && !lienSur(p.photo) ? 'Pas encore de vraie photo (« ' + p.photo + ' ») : touche + pour en prendre une.' : 'Aucune photo pour l’instant : touche + (vue d’ensemble, plaque, cotes…).'])]));
           if (p.reference) {
             var qr = qrDataUrl(lienFiche(p), 180);
             if (qr) corps.appendChild(el('div', { class: 'st-qr' }, [el('div', { class: 'st-section-titre' }, ['QR code — à coller sur le casier']),
@@ -909,7 +916,7 @@
           var fichier = f.files[0]; f.remove();
           if (!fichier) return;
           redimensionner(fichier, 1280, 0.75).then(function (data) {
-            saisir(Object.assign({ type: 'stock.photo', photo: data }, refPiece(p)), true);
+            saisir(Object.assign({ type: 'stock.photo', photo: data, ajout: true }, refPiece(p)), true);
             PM.toast('Photo enregistrée');
           })['catch'](function () { PM.toast('Impossible de lire cette photo.'); });
         });
@@ -1312,10 +1319,27 @@
         })['catch'](function (e) { info.textContent = 'Caméra indisponible : ' + (e && e.message || e); });
       }
 
-      function pleinEcran(u) {
-        var src = urlPhoto(u);
-        if (!src) return;
-        var fond = el('div', { class: 'ag-modale st-plein', role: 'dialog', onclick: function () { fond.remove(); } }, [el('img', { src: src, alt: 'Photo de la pièce' })]);
+      // plein écran : une photo ou plusieurs (glisser à gauche / à droite, ou flèches) ; toucher le fond = fermer
+      function pleinEcran(liste, debut) {
+        liste = (typeof liste === 'string' ? liensPhotos(liste) : liste || []).filter(function (u) { return urlPhoto(u); });
+        if (!liste.length) return;
+        var i = Math.min(Math.max(debut || 0, 0), liste.length - 1);
+        var img = el('img', { alt: 'Photo de la pièce' }), compteur = el('div', { class: 'st-plein-nb' });
+        function montrer() { img.src = urlPhoto(liste[i]); compteur.textContent = liste.length > 1 ? (i + 1) + ' / ' + liste.length : ''; }
+        function aller2(d) { i = (i + d + liste.length) % liste.length; montrer(); }
+        var plusieurs = liste.length > 1;
+        var fond = el('div', { class: 'ag-modale st-plein', role: 'dialog', onclick: function () { fond.remove(); } }, [
+          img, compteur,
+          plusieurs ? el('button', { class: 'st-plein-fl st-plein-g', type: 'button', 'aria-label': 'Photo précédente', onclick: function (e) { e.stopPropagation(); aller2(-1); } }, ['‹']) : null,
+          plusieurs ? el('button', { class: 'st-plein-fl st-plein-d', type: 'button', 'aria-label': 'Photo suivante', onclick: function (e) { e.stopPropagation(); aller2(1); } }, ['›']) : null]);
+        var x0 = null;
+        fond.addEventListener('touchstart', function (e) { x0 = e.touches[0].clientX; }, { passive: true });
+        fond.addEventListener('touchend', function (e) {
+          if (x0 === null || !plusieurs) return;
+          var dx = e.changedTouches[0].clientX - x0; x0 = null;
+          if (Math.abs(dx) > 40) { e.preventDefault(); aller2(dx < 0 ? 1 : -1); }
+        });
+        montrer();
         document.body.appendChild(fond);
       }
     }
