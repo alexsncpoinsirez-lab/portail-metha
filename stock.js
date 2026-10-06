@@ -767,8 +767,7 @@
           ).forEach(function (n) { dl.appendChild(n); });
           corps.appendChild(dl);
           var liens = liensPhotos(p.photo);
-          corps.appendChild(el('div', { class: 'st-section' }, [el('div', { class: 'st-section-titre' }, ['Photos' + (liens.length ? ' (' + liens.length + ')' : ''),
-            liens.length < 8 ? el('button', { class: 'pp-icone', type: 'button', title: 'Ajouter une photo', onclick: function () { choisirPhoto(p); } }, ['+']) : null]),
+          corps.appendChild(el('div', { class: 'st-section' }, [el('div', { class: 'st-section-titre' }, ['Photos' + (liens.length ? ' (' + liens.length + ')' : '')]),
             liens.length ? el('div', { class: 'st-photos' }, liens.map(function (u, i) {
               return el('div', { class: 'st-photo-mini' }, [
                 el('img', { src: urlPhoto(u).replace(/&sz=w\d+$/, '&sz=w400'), alt: 'Photo ' + (i + 1), loading: 'lazy', onclick: function () { pleinEcran(liens, i); } }),
@@ -776,15 +775,17 @@
                   if (confirm('Retirer cette photo ?')) saisir(Object.assign({ type: 'stock.retirerPhoto', lien: u }, refPiece(p)));
                 } }, ['🗑'])]);
             }))
-              : el('p', { class: 'petit' }, [p.photo && !lienSur(p.photo) ? 'Pas encore de vraie photo (« ' + p.photo + ' ») : touche + pour en prendre une.' : 'Aucune photo pour l’instant : touche + (vue d’ensemble, plaque, cotes…).'])]));
+              : el('p', { class: 'petit' }, ['Aucune photo pour l’instant : vue d’ensemble, plaque signalétique, cotes…']),
+            liens.length < 8 ? el('button', { class: 'btn-principal st-large st-btn-photo', type: 'button', onclick: function () { choisirPhoto(p); } }, ['📷 Prendre une photo'])
+              : el('p', { class: 'petit' }, ['8 photos maximum : retire-en une pour en prendre une autre.'])]));
           if (p.reference) {
             var qr = qrDataUrl(lienFiche(p), 180);
             if (qr) corps.appendChild(el('div', { class: 'st-qr' }, [el('div', { class: 'st-section-titre' }, ['QR code — à coller sur le casier']),
               el('img', { src: qr, alt: 'QR code', width: '180', height: '180' })]));
           }
           var zoneDocs = el('div', { class: 'st-docs' });
-          corps.appendChild(el('div', { class: 'st-section' }, [el('div', { class: 'st-section-titre' }, ['Documents',
-            p.reference ? el('button', { class: 'pp-icone', type: 'button', title: 'Ajouter un document', onclick: function () { ajouterDocument(p); } }, ['+']) : null]), zoneDocs]));
+          corps.appendChild(el('div', { class: 'st-section' }, [el('div', { class: 'st-section-titre' }, ['Documents (liens web)',
+            p.reference ? el('button', { class: 'pp-icone', type: 'button', title: 'Ajouter un lien vers un document', onclick: function () { ajouterDocument(p); } }, ['+']) : null]), zoneDocs]));
           remplirDocs(zoneDocs, p);
           corps.appendChild(el('div', { class: 'bg-boutons st-fiche-boutons' }, [
             el('button', { class: 'btn-second', type: 'button', onclick: function () { imprimerQr([p], p.designation || p.reference); } }, ['🖨 Imprimer']),
@@ -910,7 +911,7 @@
         setTimeout(ch.focus, 30);
       }
       function choisirPhoto(p) {
-        var f = el('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: 'hidden' });
+        var f = el('input', { type: 'file', accept: 'image/*', capture: 'environment', style: 'position:fixed;left:-9999px;top:0;opacity:0' }); // pas « hidden » : certains iPhone n'ouvrent pas l'appareil photo sur un champ masqué
         document.body.appendChild(f);
         f.addEventListener('change', function () {
           var fichier = f.files[0]; f.remove();
