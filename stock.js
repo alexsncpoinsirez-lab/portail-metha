@@ -39,6 +39,11 @@
     n = Math.round(n);
     return n < (min || 0) ? NaN : n;
   }
+  function casiersParDefaut() {
+    var l = [];
+    for (var c = 0; c < 26; c++) for (var n = 1; n <= 4; n++) l.push(String.fromCharCode(65 + c) + n);
+    return l;
+  }
   function casierNorm(c) { return String(c || '').trim().toUpperCase().replace(/\s+/g, ' '); }
   // QR code fabriqué sur le téléphone (bibliothèque qrcode.js, hors ligne, rien n'est envoyé ailleurs)
   function qrDataUrl(texte, taille) {
@@ -386,7 +391,8 @@
       /* ---------- vue par casier ---------- */
       // casiers du magasin (liste du site, A1…Z4 au départ) + ceux déjà notés sur des pièces
       function casiersDefinis() {
-        var l = ((T && T.casiers) || []).map(casierNorm);
+        // serveur pas encore à jour (pas de liste) : on affiche quand même A1…Z4
+        var l = ((T && T.casiers) || casiersParDefaut()).map(casierNorm);
         attente.forEach(function (a) {
           var c = casierNorm(a.nom);
           if (a.type === 'stock.casierAjout' && l.indexOf(c) < 0) l.push(c);
