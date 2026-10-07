@@ -222,6 +222,14 @@
         if (T) { afficher(); ouvrirLien(); }
         if (!modeDemo) charger(!T);
       });
+      // Retour sur l'appli après plus de 5 min en arrière-plan : stock rafraîchi en douceur
+      var cacheDepuis = 0;
+      window.__stVisibilite && document.removeEventListener('visibilitychange', window.__stVisibilite);
+      window.__stVisibilite = function () {
+        if (document.hidden) { cacheDepuis = Date.now(); return; }
+        if (actif() && !modeDemo && cacheDepuis && Date.now() - cacheDepuis > 5 * 60000) { cacheDepuis = 0; rechargerPlusTard(); }
+      };
+      document.addEventListener('visibilitychange', window.__stVisibilite);
       var lienTraite = false;
       // QR code d'une pièce (#outil/stock-xxx/<matériel>/<référence>) : fenêtre « Retirer » directe
       function ouvrirLien() {
@@ -234,7 +242,18 @@
       function charger(premier) {
         dernierChargement = Date.now();
         return api('stock.tout', {}, 90000).then(function (j) {
-          delete j.ok; T = j; PM.DB.set(K.tout, j);
+          delete j.ok;
+          // Sécurité : un matériel que le serveur n'a pas pu relire (ou une réponse vide) ne doit
+          // jamais effacer les pièces déjà connues sur ce téléphone.
+          var ancien = T && T.materiels ? T : null, garde = 0;
+          if (ancien && (!j.materiels || !j.materiels.length) && ancien.materiels.length) { j.materiels = ancien.materiels; garde++; }
+          (j.materiels || []).forEach(function (m) {
+            if (!m.erreur || !ancien) return;
+            var a = ancien.materiels.filter(function (x) { return x.nom === m.nom; })[0];
+            if (a && a.pieces && a.pieces.length) { m.pieces = a.pieces; garde++; }
+          });
+          if (garde) PM.toast('Une partie du stock n’a pas pu être relue : dernière version gardée.', 4000);
+          T = j; PM.DB.set(K.tout, j);
           return nettoyerAttente().then(function () {
             if (actif() && !document.querySelector('.ag-modale')) afficher();
             ouvrirLien();
@@ -453,7 +472,13 @@
           conteneur.innerHTML = '';
           var f = norm(filtre);
           var vues = liste.filter(function (p) { return !f || norm([p.designation, p.reference, p.casier, p.ancienneReference].join(' ')).indexOf(f) >= 0; });
-          if (!vues.length) { conteneur.appendChild(el('div', { class: 'vide-msg' }, [liste.length ? 'Aucune pièce ne correspond.' : 'Aucune pièce enregistrée.'])); return; }
+          if (!vues.length) {
+            var mm = (T && T.materiels || []).filter(function (x) { return x.nom === materiel; })[0];
+            conteneur.appendChild(el('div', { class: 'vide-msg' }, [liste.length ? 'Aucune pièce ne correspond.'
+              : (mm && mm.erreur ? 'Les pièces de ce matériel n’ont pas pu être lues (serveur lent).' : 'Aucune pièce enregistrée.'),
+              liste.length ? null : el('div', { style: 'margin-top:12px' }, [el('button', { class: 'btn-second', type: 'button', onclick: function () { PM.toast('Rechargement…'); charger(false); } }, ['↻ Recharger le stock'])])]));
+            return;
+          }
           conteneur.appendChild(tableau(['Référence', 'Désignation', 'Rangement', 'Stock', ''], vues.map(function (p) { return lignePiece(p, false); }), 'st-pieces st-pieces-casier'));
         }
         champ.addEventListener('input', function () { filtre = champ.value; remplir(); });
