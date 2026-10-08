@@ -371,7 +371,7 @@
           el('h2', { class: 'fi-titre', style: '--m:' + teinte(marque) }, [el('span', { class: 'fi-logo' }, [marque === SANS_MARQUE ? '?' : initiales(marque)]), marque]),
           selectSite(),
           el('button', { class: 'btn-second st-mini', type: 'button', onclick: function () { ouvrirEngin(null, marque === SANS_MARQUE ? '' : marque); } }, ['＋ Engin'])]));
-        if (marque === SANS_MARQUE) racine.appendChild(el('p', { class: 'petit' }, ['Engins dont la marque n’a pas été reconnue : ouvre-les puis « 🏷 Changer de marque ».']));
+        if (marque === SANS_MARQUE) racine.appendChild(el('p', { class: 'petit' }, ['Engins sans marque en colonne J de la feuille : renseigne-la dans la feuille, ou ouvre l’engin puis « 🏷 Changer de marque » (elle est alors écrite en colonne J).']));
         if (!es.length) { racine.appendChild(el('div', { class: 'vide-msg' }, ['Aucun engin ' + (siteFiltre ? 'sur « ' + siteFiltre + ' » ' : '') + 'pour cette marque.', el('br'), 'Touche « ＋ Engin » pour en ajouter un.'])); return; }
         racine.appendChild(grilleEngins(es));
       }
