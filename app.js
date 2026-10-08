@@ -139,6 +139,42 @@
     try { var s = CFG.sites.filter(function (x) { return apiSite(x.id) === u; })[0]; return s ? s.nom : ''; } catch (e) { return ''; }
   }
 
+  /* ---------- Repère visuel de chargement (tout le portail) ----------
+     Une fine barre animée sous la barre du haut dès qu'un échange avec un serveur est en cours ;
+     si une LECTURE dure (écran qui attend ses données), une pastille « Chargement… » s'affiche,
+     puis « Serveur lent, on patiente… » au-delà de 10 s. Les envois en arrière-plan ne montrent que la barre. */
+  var Attente = (function () {
+    var nLect = 0, nEnv = 0, nPerso = 0, texte = '', barre = null, pastille = null, t1 = null, t2 = null;
+    function noeuds() {
+      if (barre || !document.body) return;
+      barre = document.createElement('div'); barre.className = 'pm-barre-attente'; barre.setAttribute('aria-hidden', 'true');
+      pastille = document.createElement('div'); pastille.className = 'pm-pastille-attente'; pastille.setAttribute('role', 'status');
+      (document.querySelector('.barre') || document.body).appendChild(barre); document.body.appendChild(pastille);
+    }
+    function maj() {
+      noeuds(); if (!barre) return;
+      var actif = nLect + nEnv + nPerso > 0;
+      barre.classList.toggle('visible', actif);
+      barre.classList.toggle('envoi', actif && !nLect && !nPerso);
+      if (!(nLect + nPerso)) { clearTimeout(t1); clearTimeout(t2); t1 = t2 = null; pastille.classList.remove('visible', 'lent'); return; }
+      if (nPerso) { pastille.innerHTML = '<span class="pm-roue"></span>' + texte; pastille.classList.add('visible'); return; }
+      if (t1) return;
+      t1 = setTimeout(function () { pastille.innerHTML = '<span class="pm-roue"></span>Chargement…'; pastille.classList.add('visible'); }, 700);
+      t2 = setTimeout(function () { pastille.innerHTML = '<span class="pm-roue"></span>Serveur lent, on patiente…'; pastille.classList.add('lent'); }, 10000);
+    }
+    return {
+      debut: function (lecture) { if (lecture) nLect++; else nEnv++; maj(); },
+      fin: function (lecture) { if (lecture) nLect = Math.max(0, nLect - 1); else nEnv = Math.max(0, nEnv - 1); maj(); },
+      // pour un module : PM.attente(promesse, 'Préparation de la photo…')
+      suivre: function (p, txt) {
+        nPerso++; texte = String(txt || 'Patiente…').replace(/</g, '&lt;'); maj();
+        function fin() { nPerso = Math.max(0, nPerso - 1); maj(); }
+        Promise.resolve(p).then(fin, fin);
+        return p;
+      }
+    };
+  })();
+
   /* ---------- Appels au serveur Apps Script ---------- */
   var Api = {
     // text/plain évite la « pré-vérification » CORS, Apps Script accepte très bien.
@@ -189,7 +225,10 @@
           return new Promise(function (ok) { setTimeout(ok, 2500); }).then(function () { return essai(1); });
         });
       }
-      return essai(0);
+      Attente.debut(lecture);
+      var p = essai(0);
+      p.then(function () { Attente.fin(lecture); }, function () { Attente.fin(lecture); });
+      return p;
     }
   };
 
@@ -420,7 +459,7 @@
       var rapides = s.outils.filter(function (o) { return o.type === 'interne'; }).length;
       var b = el('button', {
         class: 'carte-site', style: '--c:' + s.couleur + ';--n:' + (s.neon || s.couleur) + ';--i:' + grille.children.length,
-        onclick: function () { Prefs.set('dernierSite', s.id); location.hash = 'site/' + s.id; }
+        onclick: function () { Prefs.set('dernierSite', s.id); location.hash = outilUnique(s) ? 'outil/' + outilUnique(s).id : 'site/' + s.id; }
       }, [
         el('div', { class: 'deco', html: DECO_SITE }),
         icone('site', 34),
@@ -432,6 +471,9 @@
     });
     vue.appendChild(grille);
   }
+
+  // site qui n'a qu'un outil « version rapide » (ex. SNC Poinsirez) : on l'ouvre directement
+  function outilUnique(s) { return s && s.outils.length === 1 && s.outils[0].type === 'interne' ? s.outils[0] : null; }
 
   function badgeOutil(o) {
     if (o.type === 'interne') return el('span', { class: 'badge rapide' }, ['⚡ Version rapide']);
@@ -449,6 +491,7 @@
     var s = site(id);
     if (!s) { location.hash = ''; return; }
     entete(s.nom, s.sousTitre, '#');
+    document.body.setAttribute('data-site', s.id);
     vue.style.setProperty('--c', s.couleur);
 
     var car = el('div', { class: 'carrousel', role: 'list' });
@@ -500,7 +543,8 @@
     var t = trouverOutil(id);
     if (!t || t.outil.type !== 'interne') { location.hash = ''; return; }
     var mod = (window.MODULES || {})[t.outil.module];
-    entete(t.outil.nom, t.site.nom, '#site/' + t.site.id);
+    entete(t.outil.nom, t.site.nom, outilUnique(t.site) ? '#' : '#site/' + t.site.id);
+    document.body.setAttribute('data-site', t.site.id);
     if (!mod) { vue.appendChild(el('div', { class: 'vide-msg' }, ['Module introuvable.'])); return; }
     mod.afficher(vue, {
       outil: t.outil, site: t.site, apiUrl: apiSite(t.site.id), cle: cleSite(t.site.id),
@@ -707,7 +751,7 @@
       el('p', { class: 'petit' }, ['Un lien règle d’un coup le téléphone d’un collègue : il l’ouvre, et le portail enregistre tout seul les serveurs et les clés.']),
       el('button', { class: 'btn-second', onclick: function () {
         partagerLien(lienConfig(CFG.sites.map(function (x) { return x.id; })), 'Portail Métha — tous les sites', zoneTous);
-      } }, ['Partager la configuration des deux sites']),
+      } }, ['Partager la configuration de tous les sites']),
       zoneTous,
       el('div', { class: 'champ', style: 'margin-top:12px' }, [el('label', {}, ['Lien de configuration reçu']), collage]),
       el('button', { class: 'btn-second', onclick: function () {
@@ -785,6 +829,7 @@
     var vue = $('#vue');
     vue.innerHTML = '';
     vue.removeAttribute('style');
+    document.body.removeAttribute('data-site');
     window.scrollTo(0, 0);
     var p = h.split('/');
     if (p[0] === 'config') {
@@ -806,7 +851,7 @@
   var VERSION_APP = '1.10.0';
 
   /* ---------- Exposé aux modules ---------- */
-  window.PM = { raison: raison, Journal: Journal, apiSite: apiSite, cleSite: cleSite, el: el, $: $, toast: toast, Prefs: Prefs, DB: DB, Api: Api, Envoi: Envoi, uid: uid, icone: icone, nombre: nombre };
+  window.PM = { attente: Attente.suivre, raison: raison, Journal: Journal, apiSite: apiSite, cleSite: cleSite, el: el, $: $, toast: toast, Prefs: Prefs, DB: DB, Api: Api, Envoi: Envoi, uid: uid, icone: icone, nombre: nombre };
   window.MODULES = window.MODULES || {};
 
   /* ---------- Démarrage ---------- */

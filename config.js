@@ -59,6 +59,19 @@ var PORTAIL_CONFIG = {
         { id: 'pompes-arr', nom: 'Suivi des pompes', description: 'Remplacement de pièces — pompes, broyeurs, séparateur', icone: 'pompe', type: 'interne', module: 'pompes' },
         { id: 'stock-arr', nom: 'Stock pièces', description: 'Pièces détachées : quantités, casiers, à commander, QR codes', icone: 'stock', type: 'interne', module: 'stock' }
       ]
+    },
+    {
+      id: 'snc',
+      nom: 'SNC Poinsirez',
+      sousTitre: 'Matériel agricole — filtration',
+      couleur: '#6b3fa0',   // violet : fond de l'outil
+      neon: '#c08bff',
+      // Adresse /exec de l'appli Apps Script « Filtration » (feuille Listing filtration, avec Portail.gs).
+      // Vide = adresse à saisir dans Réglages ; en attendant, l'outil s'ouvre en démonstration.
+      apiUrl: '',
+      outils: [
+        { id: 'filtration-snc', nom: 'Listing filtration', description: 'Filtres par marque et engin : stock, inventaire annuel, alertes mail, historique', icone: 'filtre', type: 'interne', module: 'filtration' }
+      ]
     }
   ],
 

@@ -956,7 +956,7 @@
         f.addEventListener('change', function () {
           var fichier = f.files[0]; f.remove();
           if (!fichier) return;
-          redimensionner(fichier, 1024, 0.7).then(function (data) {
+          (PM.attente ? PM.attente(redimensionner(fichier, 1024, 0.7), 'Préparation de la photo…') : redimensionner(fichier, 1024, 0.7)).then(function (data) {
             saisir(Object.assign({ type: 'stock.photo', photo: data, ajout: true }, refPiece(p)), true);
             PM.toast('Photo enregistrée');
           })['catch'](function () { PM.toast('Impossible de lire cette photo.'); });
@@ -1002,7 +1002,7 @@
           if (ref && pieces(materiel).some(function (p) { return p.reference === ref; }) && !confirm('Cette référence existe déjà dans ' + materiel + '. L’ajouter quand même ?')) return;
           var piece = { designation: c.designation.value.trim(), reference: ref, quantiteStock: q, seuil: s, casier: c.casier.valeur() };
           var fichier = c.photo.files[0];
-          (fichier ? redimensionner(fichier, 1024, 0.7) : Promise.resolve('')).then(function (data) {
+          (fichier ? (PM.attente ? PM.attente(redimensionner(fichier, 1024, 0.7), 'Préparation de la photo…') : redimensionner(fichier, 1024, 0.7)) : Promise.resolve('')).then(function (data) {
             if (data) piece.photo = data;
             fermer(); saisir({ type: 'stock.piece', materiel: materiel, piece: piece }, !!data); PM.toast('Pièce ajoutée');
           })['catch'](function () { msg.textContent = 'Impossible de lire la photo choisie.'; msg.hidden = false; });
