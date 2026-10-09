@@ -68,7 +68,7 @@ var PORTAIL_CONFIG = {
       neon: '#c08bff',
       // Adresse /exec de l'appli Apps Script « Filtration » (feuille Listing filtration, avec Portail.gs).
       // Vide = adresse à saisir dans Réglages ; en attendant, l'outil s'ouvre en démonstration.
-      apiUrl: '',
+      apiUrl: 'https://script.google.com/macros/s/AKfycbyRJXKQI87ovtKb-ShRZFrKlh5xZgUXWAIITI4Kel-flpORFn1UjyrT4p0bWic78gz6/exec',
       outils: [
         { id: 'filtration-snc', nom: 'Listing filtration', description: 'Filtres par marque et engin : stock, inventaire annuel, alertes mail, historique', icone: 'filtre', type: 'interne', module: 'filtration' }
       ]
