@@ -37,6 +37,17 @@
     var h = 0; for (var i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) % 360;
     return 'hsl(' + (250 + h % 70) + ' 55% 55%)';
   }
+  // Logo d'une marque : fichier icons/marques/<nom-simplifie>.png (ex. « New Holland » -> new-holland.png).
+  // Pour ajouter un logo : déposer le fichier dans app/icons/marques/ avec ce nom. Sans logo, les initiales s'affichent.
+  function fichierLogo(m) { return 'icons/marques/' + norm(m).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.png'; }
+  function logo(m, grand) {
+    if (!m || m === SANS_MARQUE) return el('span', { class: 'fi-logo' + (grand ? ' fi-logo-grand' : '') }, ['?']);
+    var txt = el('span', { class: 'fi-logo' + (grand ? ' fi-logo-grand' : '') }, [initiales(m)]);
+    var img = el('img', { class: 'fi-logo-img' + (grand ? ' fi-logo-grand' : ''), src: fichierLogo(m), alt: m, hidden: true });
+    img.addEventListener('load', function () { img.hidden = false; txt.hidden = true; });
+    img.addEventListener('error', function () { img.remove(); });
+    return el('span', { class: 'fi-logo-boite' }, [img, txt]);
+  }
   function initiales(m) {
     var p = texte(m).split(' ').filter(Boolean);
     return (p.length > 1 ? p[0][0] + p[1][0] : texte(m).slice(0, 3)).toUpperCase();
@@ -340,7 +351,7 @@
             if (m === SANS_MARQUE && !es.length) return;
             var al = es.reduce(function (s, e) { return s + e.nbAlertes; }, 0);
             g.appendChild(el('button', { class: 'pp-carte fi-marque', type: 'button', style: '--i:' + i + ';--m:' + teinte(m), onclick: function () { aller('engins', { marque: m }); } }, [
-              el('div', { class: 'fi-marque-tete' }, [el('span', { class: 'fi-logo' }, [m === SANS_MARQUE ? '?' : initiales(m)]), al ? el('span', { class: 'st-pastille', title: al + ' référence(s) sous le seuil' }, [String(al)]) : null]),
+              el('div', { class: 'fi-marque-tete' }, [logo(m, true), al ? el('span', { class: 'st-pastille', title: al + ' référence(s) sous le seuil' }, [String(al)]) : null]),
               el('div', { class: 'fi-marque-nom' }, [m]),
               el('div', { class: 'petit' }, [es.length ? es.length + ' engin' + (es.length > 1 ? 's' : '') : 'Aucun engin'])]));
           });
@@ -368,7 +379,7 @@
         var es = enginsVisibles().filter(function (e) { return e.marque === marque; }).sort(function (a, b) { return a.nom.localeCompare(b.nom, 'fr', { numeric: true }); });
         racine.appendChild(el('div', { class: 'st-actions' }, [
           el('button', { class: 'btn-second st-mini', type: 'button', onclick: function () { aller('marques'); } }, ['← Marques']),
-          el('h2', { class: 'fi-titre', style: '--m:' + teinte(marque) }, [el('span', { class: 'fi-logo' }, [marque === SANS_MARQUE ? '?' : initiales(marque)]), marque]),
+          el('h2', { class: 'fi-titre', style: '--m:' + teinte(marque) }, [logo(marque), marque]),
           selectSite(),
           el('button', { class: 'btn-second st-mini', type: 'button', onclick: function () { ouvrirEngin(null, marque === SANS_MARQUE ? '' : marque); } }, ['＋ Engin'])]));
         if (marque === SANS_MARQUE) racine.appendChild(el('p', { class: 'petit' }, ['Engins sans marque en colonne J de la feuille : renseigne-la dans la feuille, ou ouvre l’engin puis « 🏷 Changer de marque » (elle est alors écrite en colonne J).']));

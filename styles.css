@@ -1115,3 +1115,11 @@ body.futur .fi-chiffre b { color: var(--neon); font-family: var(--mono); }
 
 .fi-qte { width: 110px; min-height: 52px; font-size: 24px !important; }
 body.futur .ag-modale-boite input, body.futur .ag-modale-boite select { background: rgba(0,0,0,.35); color: var(--texte); border: 1px solid var(--bord); border-radius: 10px; }
+
+/* logos des marques (icons/marques/*.png) : image si elle existe, sinon initiales colorées */
+.fi-logo-boite { display: inline-flex; align-items: center; min-height: 42px; }
+.fi-logo-img { height: 42px; max-width: 150px; object-fit: contain; border-radius: 8px; background: #fff; padding: 3px 6px; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.fi-logo-img.fi-logo-grand { height: 56px; max-width: 100%; }
+.fi-titre .fi-logo-img { height: 34px; max-width: 120px; padding: 2px 5px; }
+.fi-marque .fi-marque-tete { align-items: flex-start; }
+.fi-marque .fi-marque-nom { font-size: 15px; color: var(--texte-2); margin-top: 8px; }
