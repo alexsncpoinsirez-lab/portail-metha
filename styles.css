@@ -526,6 +526,15 @@ body.futur .chart-tooltip { background: rgba(10,18,30,.92); color: var(--texte);
 .nh3-table tr.attente td { opacity: .65; }
 .nh3-table-large { min-width: 780px; }
 .nh3-table-large td { white-space: nowrap; }
+/* modification d'une ligne d'historique */
+.nh3-table td.nh3-td-modif { width: 36px; padding-left: 2px; padding-right: 4px; }
+.nh3-btn-modif { width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--bord); background: var(--carte, transparent); color: var(--accent, inherit); font-size: 16px; cursor: pointer; }
+.nh3-btn-modif:active { transform: scale(.94); }
+.nh3-edition { border-color: var(--accent, #3b7dd8); }
+.nh3-actions-edition { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.nh3-actions-edition .btn-second { flex: 1; min-height: 42px; }
+.nh3-btn-suppr { color: var(--alerte, #c0392b); border-color: var(--alerte, #c0392b) !important; }
+.nh3-btn-suppr.arme { background: var(--alerte, #c0392b) !important; color: #fff; }
 
 /* saisie */
 .nh3-pastille { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }

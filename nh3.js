@@ -98,7 +98,7 @@
   function fmtKg(v) { return Math.round(v).toLocaleString('fr-FR'); }
   function nb(x) { var n = PM.nombre(x); return n === null || isNaN(n) ? null : n; } // « 21 300 » = 21300, « 12abc » refusé
   function svgEl(tag, attrs) { var e = document.createElementNS(NS, tag); for (var k in attrs) if (attrs[k] !== null && attrs[k] !== undefined) e.setAttribute(k, attrs[k]); return e; }
-  function maintenantLocal() { var n = new Date(); return n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate()) + 'T' + pad(n.getHours()) + ':' + pad(n.getMinutes()); }
+  function maintenantLocal(d) { var n = d ? new Date(d) : new Date(); if (isNaN(n)) n = new Date(); return n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate()) + 'T' + pad(n.getHours()) + ':' + pad(n.getMinutes()); }
   function determinerCuve1(mouvements, force) {
     if (force === '03F321' || force === '03F331') return force;
     var der = { '03F321': null, '03F331': null };
@@ -115,6 +115,7 @@
       var CLE_DONNEES = 'nh3v2_donnees_' + ctx.site.id;
       var CLE_ATTENTE = 'nh3v2_attente_' + ctx.site.id;
       var D = null, attente = [], onglet = 'vue', formCharbonOuvert = false;
+      var editionReleve = null, editionMouvement = null; // ligne en cours de modification (null = nouvelle saisie)
 
       vue.appendChild(el('div', { class: 'chargement' }, [el('div', { class: 'squelette' }), el('div', { class: 'squelette' })]));
       Promise.all([PM.DB.get(CLE_DONNEES), PM.DB.get(CLE_ATTENTE)]).then(function (r) {
@@ -149,18 +150,43 @@
       });
 
       /* ---------- données affichées = serveur + saisies en attente ---------- */
+      /* Les modifications / suppressions pas encore envoyées sont appliquées à l'affichage */
       function releves() {
         var l = D.releves.slice();
-        attente.forEach(function (a) { if (a.type === 'nh3.releve') l.push({ id: a.id, date: a.dateAnalyse, entree: a.entree, sortie1: a.sortie1, sortie2: a.sortie2, enAttente: true }); });
+        attente.forEach(function (a) {
+          if (a.type === 'nh3.releve') l.push({ id: a.id, date: a.dateAnalyse, entree: a.entree, sortie1: a.sortie1, sortie2: a.sortie2, enAttente: true });
+          else if (a.type === 'nh3.releve.modif') l = l.map(function (r) { return r.id === a.idReleve ? { id: r.id, date: a.dateAnalyse, entree: a.entree, sortie1: a.sortie1, sortie2: a.sortie2, enAttente: true } : r; });
+          else if (a.type === 'nh3.releve.suppr') l = l.filter(function (r) { return r.id !== a.idReleve; });
+        });
         return l.sort(byDate);
       }
       function mouvements() {
         var l = D.charbon.mouvements.slice();
+        function depuis(a, id) {
+          return { id: id, date: a.date, cuve: a.cuve, typeMouvement: a.typeMouvement, heuresCompteur: a.heuresCompteur,
+            couches: a.couches.map(function (c, i) { return { ordre: i + 1, type: c.type, quantite: c.quantite }; }), enAttente: true };
+        }
         attente.forEach(function (a) {
-          if (a.type === 'nh3.mouvement') l.push({ id: a.id, date: a.date, cuve: a.cuve, typeMouvement: a.typeMouvement, heuresCompteur: a.heuresCompteur,
-            couches: a.couches.map(function (c, i) { return { ordre: i + 1, type: c.type, quantite: c.quantite }; }), enAttente: true });
+          if (a.type === 'nh3.mouvement') l.push(depuis(a, a.id));
+          else if (a.type === 'nh3.mouvement.modif') l = l.map(function (m) { return m.id === a.idMouvement ? depuis(a, m.id) : m; });
+          else if (a.type === 'nh3.mouvement.suppr') l = l.filter(function (m) { return m.id !== a.idMouvement; });
         });
         return l;
+      }
+      /* Bouton crayon d'une ligne d'historique (pas pour une saisie encore en attente d'envoi) */
+      function boutonModifier(ligne, action) {
+        if (ligne.enAttente || modeDemo) return el('td', { class: 'nh3-td-modif' }, []);
+        return el('td', { class: 'nh3-td-modif' }, [el('button', { type: 'button', class: 'nh3-btn-modif', title: 'Modifier', 'aria-label': 'Modifier', onclick: action }, ['✎'])]);
+      }
+      /* Bouton « Supprimer » en deux temps (pas de fenêtre système) */
+      function boutonSupprimer(libelle, action) {
+        var b = el('button', { type: 'button', class: 'btn-second nh3-btn-suppr' }, [libelle]);
+        var arme = false;
+        b.onclick = function () {
+          if (!arme) { arme = true; b.textContent = 'Confirmer la suppression ?'; b.classList.add('arme'); setTimeout(function () { arme = false; b.textContent = libelle; b.classList.remove('arme'); }, 5000); return; }
+          action();
+        };
+        return b;
       }
       function couleurCharbon(nom) { var t = D.charbon.types.filter(function (x) { return x.nom === nom; })[0]; return t ? t.couleur : '#8A94A6'; }
 
@@ -178,7 +204,7 @@
         var tabs = el('div', { class: 'onglets', role: 'tablist' });
         [['vue', 'Suivi NH3'], ['analyse', '+ Analyse'], ['charbon', 'Charbon actif']].forEach(function (t) {
           tabs.appendChild(el('button', { role: 'tab', class: onglet === t[0] ? 'actif' : '', 'aria-selected': String(onglet === t[0]),
-            onclick: function () { onglet = t[0]; afficher(); window.scrollTo(0, 0); } }, [t[1]]));
+            onclick: function () { onglet = t[0]; editionReleve = null; if (editionMouvement) { editionMouvement = null; formCharbonOuvert = false; } afficher(); window.scrollTo(0, 0); } }, [t[1]]));
         });
         racine.appendChild(tabs);
         if (onglet === 'vue') ecranVue(racine);
@@ -255,14 +281,16 @@
         var rows = R.slice().reverse();
         var tbody = el('tbody');
         rows.forEach(function (r) {
-          tbody.appendChild(el('tr', { class: r.enAttente ? 'attente' : '' }, [el('td', { class: 'date-cell' }, [fmtDateTime(r.date) + (r.enAttente ? ' ⏳' : '')])].concat(POINTS.map(function (p) {
+          tbody.appendChild(el('tr', { class: r.enAttente ? 'attente' : '' }, [boutonModifier(r, function () { editionReleve = r; onglet = 'analyse'; afficher(); window.scrollTo(0, 0); }),
+            el('td', { class: 'date-cell' }, [fmtDateTime(r.date) + (r.enAttente ? ' ⏳' : '')])].concat(POINTS.map(function (p) {
             var st3 = statusFor(r[p.key], S[p.key]);
             return el('td', { class: 'val-cell' }, [el('span', { class: 'status-pill ' + st3 }, [el('span', { class: 'dot' }), fmtVal(r[p.key]) + ' ' + UNIT])]);
           }))));
         });
         racine.appendChild(el('section', { class: 'bandeau' }, [
           el('div', { class: 'carte-tete' }, [el('h2', {}, ['Historique des relevés']), el('span', { class: 'petit' }, [rows.length + (rows.length > 1 ? ' relevés' : ' relevé')])]),
-          el('div', { class: 'table-scroll' }, [el('table', { class: 'nh3-table' }, [el('thead', {}, [el('tr', {}, ['Date', 'Entrée cuve 1', 'Sortie cuve 1', 'Sortie cuve 2'].map(function (h) { return el('th', {}, [h]); }))]), tbody])])
+          el('div', { class: 'table-scroll' }, [el('table', { class: 'nh3-table' }, [el('thead', {}, [el('tr', {}, ['', 'Date', 'Entrée cuve 1', 'Sortie cuve 1', 'Sortie cuve 2'].map(function (h) { return el('th', {}, [h]); }))]), tbody])]),
+          modeDemo ? null : el('p', { class: 'petit' }, ['Touche ✎ pour corriger ou supprimer un relevé.'])
         ]));
         racine.appendChild(el('p', { class: 'petit nh3-pied' }, ['Seuils d’alerte — Entrée cuve 1 : ' + S.entree + ' ppm · Sortie cuve 1 : ' + S.sortie1 + ' ppm · Sortie cuve 2 : ' + S.sortie2 + ' ppm']));
       }
@@ -331,13 +359,15 @@
 
       /* ===== NOUVELLE ANALYSE ===== */
       function ecranAnalyse(racine) {
-        var S = D.seuils;
-        var date = el('input', { type: 'datetime-local', value: maintenantLocal() });
+        var S = D.seuils, E = editionReleve;
+        var date = el('input', { type: 'datetime-local', value: maintenantLocal(E ? E.date : null) });
         var champs = {};
-        var form = el('section', { class: 'bandeau' }, [el('h2', { class: 'nh3-h2' }, ['Nouvelle analyse NH3']), el('div', { class: 'champ' }, [el('label', {}, ['Date et heure du relevé']), date])]);
+        var form = el('section', { class: 'bandeau' + (E ? ' nh3-edition' : '') }, [
+          el('h2', { class: 'nh3-h2' }, [E ? 'Modifier l’analyse du ' + fmtDateTime(E.date) : 'Nouvelle analyse NH3']),
+          el('div', { class: 'champ' }, [el('label', {}, ['Date et heure du relevé']), date])]);
         POINTS.forEach(function (p) {
           var etat = el('span', { class: 'nh3-etat' });
-          var inp = el('input', { type: 'text', inputmode: 'decimal', placeholder: 'ppm', autocomplete: 'off' });
+          var inp = el('input', { type: 'text', inputmode: 'decimal', placeholder: 'ppm', autocomplete: 'off', value: E && typeof E[p.key] === 'number' ? String(E[p.key]).replace('.', ',') : '' });
           inp.addEventListener('input', function () {
             var v = nb(inp.value);
             if (v === null) { etat.className = 'nh3-etat'; etat.textContent = ''; return; }
@@ -351,8 +381,22 @@
           var v = {};
           for (var k in champs) { v[k] = nb(champs[k].value); if (v[k] === null || v[k] < 0) { PM.toast('Renseigne les 3 mesures'); champs[k].focus(); return; } }
           var d = new Date(date.value); if (isNaN(d)) { PM.toast('Date invalide'); return; }
-          enregistrer({ type: 'nh3.releve', dateAnalyse: d.toISOString(), entree: v.entree, sortie1: v.sortie1, sortie2: v.sortie2 }, 'Analyse enregistrée', 'vue');
-        } }, ['Enregistrer']));
+          if (E) {
+            editionReleve = null;
+            enregistrer({ type: 'nh3.releve.modif', idReleve: E.id, dateAnalyse: d.toISOString(), entree: v.entree, sortie1: v.sortie1, sortie2: v.sortie2 }, 'Analyse modifiée', 'vue');
+          } else {
+            enregistrer({ type: 'nh3.releve', dateAnalyse: d.toISOString(), entree: v.entree, sortie1: v.sortie1, sortie2: v.sortie2 }, 'Analyse enregistrée', 'vue');
+          }
+        } }, [E ? 'Enregistrer la modification' : 'Enregistrer']));
+        if (E) {
+          form.appendChild(el('div', { class: 'nh3-actions-edition' }, [
+            el('button', { type: 'button', class: 'btn-second', onclick: function () { editionReleve = null; onglet = 'vue'; afficher(); } }, ['Annuler']),
+            boutonSupprimer('Supprimer cette analyse', function () {
+              editionReleve = null;
+              enregistrer({ type: 'nh3.releve.suppr', idReleve: E.id }, 'Analyse supprimée', 'vue');
+            })
+          ]));
+        }
         racine.appendChild(form);
       }
 
@@ -385,7 +429,7 @@
       function ecranCharbon(racine) {
         var carte = el('section', { class: 'bandeau' });
         carte.appendChild(el('div', { class: 'carte-tete' }, [el('h2', {}, ['Charbon actif — 03F321 / 03F331']),
-          el('button', { class: 'btn-second', onclick: function () { formCharbonOuvert = !formCharbonOuvert; afficher(); } }, [formCharbonOuvert ? 'Fermer' : '+ Nouveau mouvement'])]));
+          el('button', { class: 'btn-second', onclick: function () { formCharbonOuvert = !formCharbonOuvert; editionMouvement = null; afficher(); } }, [formCharbonOuvert ? 'Fermer' : '+ Nouveau mouvement'])]));
         if (formCharbonOuvert) carte.appendChild(formulaireCharbon());
         var wrap = el('div', { html: CARBON_SVG });
         carte.appendChild(wrap);
@@ -423,6 +467,7 @@
           var total = (m.couches || []).reduce(function (s, c) { return s + c.quantite; }, 0);
           var dd = du[m.id];
           tbody.appendChild(el('tr', { class: m.enAttente ? 'attente' : '' }, [
+            boutonModifier(m, function () { editionMouvement = m; formCharbonOuvert = true; afficher(); window.scrollTo(0, 0); }),
             el('td', { class: 'date-cell' }, [fmtDateTime(m.date) + (m.enAttente ? ' ⏳' : '')]),
             el('td', {}, [m.cuve]), el('td', {}, [m.typeMouvement]),
             el('td', { html: (m.couches || []).map(function (c) { return c.type + ' — ' + fmtKg(c.quantite) + ' kg'; }).join('<br>') }),
@@ -434,15 +479,17 @@
         racine.appendChild(el('section', { class: 'bandeau' }, [
           el('div', { class: 'carte-tete' }, [el('h2', {}, ['Historique charbon actif']), el('span', { class: 'petit' }, [rows.length + (rows.length > 1 ? ' mouvements' : ' mouvement')])]),
           el('div', { class: 'table-scroll' }, [el('table', { class: 'nh3-table nh3-table-large' }, [
-            el('thead', {}, [el('tr', {}, ['Date', 'Cuve', 'Mouvement', 'Charbon', 'Quantité', 'Heures compteur', 'Durée de fonctionnement'].map(function (h) { return el('th', {}, [h]); }))]), tbody])])
+            el('thead', {}, [el('tr', {}, ['', 'Date', 'Cuve', 'Mouvement', 'Charbon', 'Quantité', 'Heures compteur', 'Durée de fonctionnement'].map(function (h) { return el('th', {}, [h]); }))]), tbody])]),
+          modeDemo ? null : el('p', { class: 'petit' }, ['Touche ✎ pour corriger ou supprimer un mouvement.'])
         ]));
       }
 
       function formulaireCharbon() {
-        var date = el('input', { type: 'datetime-local', value: maintenantLocal() });
-        var cuve = el('select', {}, ['03F321', '03F331'].map(function (c) { return el('option', { value: c }, [c]); }));
-        var mvt = el('select', {}, [el('option', { value: 'Remplacement' }, ['Remplacement (vidange + remplissage)']), el('option', { value: 'Ajout' }, ['Ajout (par-dessus, sans vidange)'])]);
-        var heures = el('input', { type: 'text', inputmode: 'numeric', placeholder: 'heures' });
+        var E = editionMouvement;
+        var date = el('input', { type: 'datetime-local', value: maintenantLocal(E ? E.date : null) });
+        var cuve = el('select', {}, ['03F321', '03F331'].map(function (c) { return el('option', { value: c, selected: E && E.cuve === c ? 'selected' : null }, [c]); }));
+        var mvt = el('select', {}, [el('option', { value: 'Remplacement' }, ['Remplacement (vidange + remplissage)']), el('option', { value: 'Ajout', selected: E && E.typeMouvement === 'Ajout' ? 'selected' : null }, ['Ajout (par-dessus, sans vidange)'])]);
+        var heures = el('input', { type: 'text', inputmode: 'numeric', placeholder: 'heures', value: E && typeof E.heuresCompteur === 'number' ? String(E.heuresCompteur) : '' });
         var agent = PM.Prefs.get('agent', '');
         var oper = el('select', {}, [el('option', { value: '' }, ['— Choisir —'])].concat(OPERATEURS.map(function (o) { return el('option', { value: o, selected: o === agent ? 'selected' : null }, [o]); })));
         var blocHeures = el('div', { class: 'champ' }, [el('label', {}, ['Heures de fonctionnement de l’épurateur (h)']), heures]);
@@ -463,13 +510,15 @@
           couches.appendChild(row); renum();
         }
         // Pré-remplissage avec la composition du dernier remplacement
-        var dernier = mouvements().filter(function (m) { return m.typeMouvement === 'Remplacement'; }).sort(byDate).pop();
+        var dernier = E || mouvements().filter(function (m) { return m.typeMouvement === 'Remplacement'; }).sort(byDate).pop();
         if (dernier) dernier.couches.forEach(function (c) { ajouterCouche(c.type, c.quantite); }); else ajouterCouche();
+        if (E) blocOper.hidden = true; // une correction n'est pas réinscrite dans le tableau des interventions
         majVisibilite();
-        return el('div', { class: 'nh3-form-charbon' }, [
+        return el('div', { class: 'nh3-form-charbon' + (E ? ' nh3-edition' : '') }, [
+          E ? el('h3', { class: 'nh3-h2' }, ['Modifier le mouvement du ' + fmtDateTime(E.date)]) : null,
           el('div', { class: 'champ' }, [el('label', {}, ['Date et heure']), date]),
           el('div', { class: 'nh3-2col' }, [el('div', { class: 'champ' }, [el('label', {}, ['Cuve']), cuve]), el('div', { class: 'champ' }, [el('label', {}, ['Type de mouvement']), mvt])]),
-          blocHeures, blocOper,
+          blocHeures, E ? null : blocOper,
           el('p', { class: 'petit' }, ['Une couche par type de charbon : la première ligne est celle du fond de la cuve.']),
           couches,
           el('button', { type: 'button', class: 'btn-second', onclick: function () { ajouterCouche(); } }, ['+ Ajouter une couche']),
@@ -484,12 +533,24 @@
             var h = null;
             if (mvt.value === 'Remplacement') {
               h = nb(heures.value); if (h === null || h < 0) { PM.toast('Indique les heures compteur'); heures.focus(); return; }
-              if (!oper.value) { PM.toast('Choisis l’opérateur'); return; }
+              if (!E && !oper.value) { PM.toast('Choisis l’opérateur'); return; }
             }
             formCharbonOuvert = false;
-            enregistrer({ type: 'nh3.mouvement', date: d.toISOString(), cuve: cuve.value, typeMouvement: mvt.value, heuresCompteur: h,
-              operateur: mvt.value === 'Remplacement' ? oper.value : null, couches: cs }, 'Mouvement de charbon enregistré', 'charbon');
-          } }, ['Enregistrer'])
+            if (E) {
+              editionMouvement = null;
+              enregistrer({ type: 'nh3.mouvement.modif', idMouvement: E.id, date: d.toISOString(), cuve: cuve.value, typeMouvement: mvt.value, heuresCompteur: h, couches: cs }, 'Mouvement de charbon modifié', 'charbon');
+            } else {
+              enregistrer({ type: 'nh3.mouvement', date: d.toISOString(), cuve: cuve.value, typeMouvement: mvt.value, heuresCompteur: h,
+                operateur: mvt.value === 'Remplacement' ? oper.value : null, couches: cs }, 'Mouvement de charbon enregistré', 'charbon');
+            }
+          } }, [E ? 'Enregistrer la modification' : 'Enregistrer']),
+          E ? el('div', { class: 'nh3-actions-edition' }, [
+            el('button', { type: 'button', class: 'btn-second', onclick: function () { editionMouvement = null; formCharbonOuvert = false; afficher(); } }, ['Annuler']),
+            boutonSupprimer('Supprimer ce mouvement', function () {
+              editionMouvement = null; formCharbonOuvert = false;
+              enregistrer({ type: 'nh3.mouvement.suppr', idMouvement: E.id }, 'Mouvement supprimé', 'charbon');
+            })
+          ]) : null
         ]);
       }
 
