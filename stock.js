@@ -712,7 +712,7 @@
       function ecranInventaire(racine) {
         racine.appendChild(el('h2', { class: 'pp-titre', style: 'margin-bottom:6px' }, ['Inventaire']));
         racine.appendChild(el('p', { class: 'petit' }, ['Saisis le nombre compté : l’appli calcule l’écart et le note dans l’historique (motif « Inventaire »).']));
-        racine.appendChild(el('button', { class: 'btn-second st-large', style: 'margin:0 0 12px', type: 'button', onclick: function () { aller('noncomptees'); } }, ['🔎 Pièces non comptées (restées sans modification)']));
+        racine.appendChild(el('button', { class: 'btn-second st-large', style: 'margin:0 0 12px', type: 'button', onclick: function () { aller('noncomptees'); } }, ['🔎 Pièces non touchées depuis l’inventaire']));
         var choixMat = el('select', { class: 'st-select', style: 'margin:0' }, [el('option', { value: '' }, ['…ou un matériel entier'])]
           .concat(mats().map(function (m) { return el('option', { value: m.nom }, [m.nom]); })));
         if (invPortee && invPortee.type === 'materiel') choixMat.value = invPortee.valeur;
@@ -790,11 +790,11 @@
         });
       }
       function ecranNonComptees(racine) {
-        racine.appendChild(el('h2', { class: 'pp-titre', style: 'margin-bottom:6px' }, ['Pièces non comptées']));
-        racine.appendChild(el('p', { class: 'petit' }, ['Pièces qui n’ont reçu aucun comptage d’inventaire depuis la période choisie : elles n’ont sans doute pas été vues. ',
-          'Touche ✓ si la pièce est bien là (quantité inchangée) ou « Plus en stock » pour la passer à 0.']));
-        var sel = el('select', { class: 'st-select', style: 'margin:0 0 12px' }, [[7, 'depuis 7 jours'], [30, 'depuis 30 jours'], [90, 'depuis 3 mois'], [365, 'depuis 1 an'], [0, 'jamais comptées']].map(function (o) {
-          return el('option', { value: String(o[0]), selected: o[0] === ncJours ? 'selected' : null }, ['Pas comptées ' + o[1]]);
+        racine.appendChild(el('h2', { class: 'pp-titre', style: 'margin-bottom:6px' }, ['Pièces non touchées']));
+        racine.appendChild(el('p', { class: 'petit' }, ['Pièces dont la fiche n’a reçu aucune modification (comptage, quantité, casier, désignation, référence, seuil, photo…) depuis la période choisie : elles n’ont sans doute pas été vues à l’inventaire. ',
+          'Dès qu’une pièce est modifiée, elle sort de la liste. Touche ✓ si elle est bien là (quantité inchangée) ou « Plus en stock » pour la passer à 0.']));
+        var sel = el('select', { class: 'st-select', style: 'margin:0 0 12px' }, [[7, 'depuis 7 jours'], [30, 'depuis 30 jours'], [90, 'depuis 3 mois'], [365, 'depuis 1 an'], [0, 'jamais modifiées']].map(function (o) {
+          return el('option', { value: String(o[0]), selected: o[0] === ncJours ? 'selected' : null }, ['Non touchées ' + o[1]]);
         }));
         sel.addEventListener('change', function () { ncJours = Number(sel.value); afficher(); });
         racine.appendChild(el('div', { class: 'champ' }, [el('label', {}, ['Période']), sel]));
@@ -804,13 +804,16 @@
         chargerDatesInventaire(false).then(function (dates) {
           if (ecran !== 'noncomptees' || !actif()) return;
           zone.innerHTML = '';
-          // comptages faits sur ce téléphone et pas encore partis comptent aussi
+          // modifications faites sur ce téléphone et pas encore parties comptent aussi
           var locaux = {};
-          attente.forEach(function (a) { if (a.type === 'stock.quantite' && a.absolu && /inventaire/i.test(a.motif || '')) locaux[cleInv(a)] = new Date(a.horodatage).getTime(); });
+          attente.forEach(function (a) { if (TYPES_PIECE.indexOf(a.type) >= 0 || a.type === 'stock.piece') { var k0 = cleInv(a.type === 'stock.piece' ? Object.assign({ materiel: a.materiel }, a.piece) : a); locaux[k0] = Math.max(locaux[k0] || 0, new Date(a.horodatage).getTime() || 0); } });
+          // date « Modifié le » de la fiche (toutes les lignes d'une même référence comptent)
+          var fiches = {};
+          toutesPieces().forEach(function (p) { var t = p.modifieLe ? new Date(p.modifieLe).getTime() : 0; var k1 = cleInv(p); if (t > (fiches[k1] || 0)) fiches[k1] = t; });
           var limite = ncJours ? Date.now() - ncJours * 86400000 : Infinity;
           var dejaZero = 0, parMat = {}, ordre = [], total = 0;
           toutesPieces().forEach(function (p) {
-            var k = cleInv(p), d = dates[k] || {}, dernier = Math.max(d.i || 0, locaux[k] || 0);
+            var k = cleInv(p), d = dates[k] || {}, dernier = Math.max(d.i || 0, d.m || 0, fiches[k] || 0, locaux[k] || 0);
             var fait = invFaits[p.materiel + '|' + cle(p)] !== undefined; // traitée à l'instant : reste affichée, cochée
             if (!fait && (ncJours ? dernier >= limite : dernier > 0)) return;
             if (!fait && !p.quantiteStock) { dejaZero++; return; }
@@ -819,12 +822,12 @@
             total++;
           });
           zone.appendChild(el('p', { class: 'petit' }, [total + ' pièce' + (total > 1 ? 's' : '') + ' à vérifier' + (dejaZero ? ' · ' + dejaZero + ' déjà à 0 (non affichées)' : '')]));
-          if (!total) { zone.appendChild(el('div', { class: 'vide-msg' }, ['Tout a été compté sur cette période. 👍'])); return; }
+          if (!total) { zone.appendChild(el('div', { class: 'vide-msg' }, ['Toutes les pièces ont été touchées sur cette période. 👍'])); return; }
           ordre.forEach(function (nom) {
             zone.appendChild(el('h3', { class: 'pp-h3', style: 'margin-top:14px' }, [nom + ' (' + parMat[nom].length + ')']));
             var lignes = parMat[nom].map(function (x) {
               var p = x.p, k = p.materiel + '|' + cle(p);
-              var info = x.dernier ? 'compté le ' + new Date(x.dernier).toLocaleDateString('fr-FR') : (x.mouvement ? 'jamais compté · dernier mouvement ' + new Date(x.mouvement).toLocaleDateString('fr-FR') : 'jamais compté');
+              var info = x.dernier ? 'dernière modification le ' + new Date(x.dernier).toLocaleDateString('fr-FR') : 'jamais modifiée';
               function marquer(n) {
                 invFaits[k] = n;
                 saisir(Object.assign({ type: 'stock.quantite', absolu: true, compte: n, motif: n === 0 ? 'Inventaire — plus en stock' : 'Inventaire' }, refPiece(p)));
