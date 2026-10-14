@@ -986,6 +986,9 @@ body.futur .st-partage { color: #7fd3ff; }
 .st-ecart { display: block; font-size: 12px; font-weight: 700; margin-top: 2px; }
 .st-ok { min-height: 38px; padding: 0 12px; }
 .st-inventaire tr.st-fait td { opacity: .7; }
+.st-nc-actions { white-space: nowrap; }
+.st-nc-actions .st-ok { margin-left: 6px; }
+.st-nc-zero { color: var(--alerte, #c0392b); border-color: var(--alerte, #c0392b) !important; }
 .st-motifs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .st-motifs .st-chip { flex: 0 0 auto; padding: 0 12px; }
 .st-chip.actif { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }

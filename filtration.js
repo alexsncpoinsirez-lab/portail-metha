@@ -279,7 +279,7 @@
         if (modeDemo) racine.appendChild(el('div', { class: 'bandeau', style: 'border-color:var(--attente)' }, [
           el('b', {}, ['Mode démonstration. ']), el('span', { class: 'petit' }, ['Données d’exemple, rien n’est envoyé. Une fois ton appli Filtration branchée (adresse /exec + clé), renseigne-la dans ']), el('a', { href: '#reglages' }, ['Réglages']), '.']));
         racine.appendChild(barreOutils());
-        ({ engins: ecranEngins, engin: ecranEngin, inventaire: ecranInventaire, historique: ecranHistorique, commander: ecranCommander }[ecran] || ecranMarques)(racine);
+        ({ engins: ecranEngins, engin: ecranEngin, inventaire: ecranInventaire, noncomptees: ecranNonComptees, historique: ecranHistorique, commander: ecranCommander }[ecran] || ecranMarques)(racine);
         window.scrollTo(0, y);
       }
       function aller(e, opts) {
@@ -594,7 +594,8 @@
         racine.appendChild(el('div', { class: 'bandeau fi-inv-tete' }, [
           el('div', { style: 'font-weight:700' }, ['📋 Inventaire annuel ' + new Date().getFullYear()]),
           el('p', { class: 'petit' }, ['Compte chaque référence sur l’étagère et tape la quantité. Le comptage est gardé sur ce téléphone (même appli fermée) jusqu’à « Valider ». Une référence montée sur plusieurs engins ne se compte qu’une fois.']),
-          barre, compteur]));
+          barre, compteur,
+          el('button', { class: 'btn-second st-mini', type: 'button', style: 'margin-top:8px', onclick: function () { histo = null; aller('noncomptees'); } }, ['🔎 Références non comptées cette année'])]));
         var champRech = el('input', { type: 'search', class: 'st-filtre', placeholder: '🔍 Référence, filtre ou engin', value: invFiltre, autocomplete: 'off' });
         var choixMarque = el('select', { class: 'st-filtre' }, [el('option', { value: '' }, ['Toutes les marques'])].concat(D.marques.map(function (m) { return el('option', { value: m }, [m]); })));
         choixMarque.value = invMarque;
@@ -663,6 +664,50 @@
         remplir(); majProgres();
       }
 
+      /* ---------- références non comptées : aucun « Inventaire » dans l'historique de l'année ---------- */
+      var ncFaits = {};
+      function ecranNonComptees(racine) {
+        var annee = new Date().getFullYear();
+        racine.appendChild(el('div', { class: 'bandeau' }, [
+          el('div', { style: 'font-weight:700' }, ['🔎 Références non comptées en ' + annee]),
+          el('p', { class: 'petit' }, ['Références sans aucun comptage d’inventaire validé cette année : elles n’ont sans doute pas été vues sur l’étagère. ',
+            'Touche ✓ si le filtre est bien là (stock inchangé) ou « Plus en stock » pour le passer à 0. Chaque choix est noté dans l’historique.'])]));
+        if (!histo || histo.annee !== annee) {
+          histo = null; histoAnnee = annee; chargerHisto(annee);
+          racine.appendChild(el('div', { class: 'fi-attente-page' }, [el('div', { class: 'pm-roue' }), el('div', {}, ['Lecture de l’historique ' + annee + '…'])]));
+          return;
+        }
+        if (histo.erreur) { racine.appendChild(el('div', { class: 'vide-msg' }, ['Impossible de lire l’historique.', el('br'), el('span', { class: 'petit' }, [histo.erreur]), el('br'), el('br'),
+          el('button', { class: 'btn-second', type: 'button', onclick: function () { histo = null; afficher(); } }, ['Réessayer'])])); return; }
+        var comptees = {};
+        (histo.lignes || []).forEach(function (l) { if (/inventaire/i.test(l.a || '')) comptees[cleRef(l.r)] = true; });
+        attente.forEach(function (a) { if (a.type === 'filtration.inventaire' && new Date(a.date).getFullYear() === annee) comptees[cleRef(a.reference)] = true; });
+        var enCours = PM.Prefs.get(cleInv(), {}) || {}; // comptage local pas encore validé
+        function marqueDe(r) { var e = D.engins.filter(function (x) { return x.nom === r.engins[0]; })[0]; return e ? e.marque : SANS_MARQUE; }
+        var refs = Object.keys(D.refs).map(function (k) { return D.refs[k]; }).filter(function (r) { return ncFaits[r.k] !== undefined || !comptees[r.k]; });
+        refs.forEach(function (r) { r.marque = marqueDe(r); });
+        refs.sort(function (a, b) { return D.marques.indexOf(a.marque) - D.marques.indexOf(b.marque) || a.ref.localeCompare(b.ref, 'fr', { numeric: true }); });
+        var dejaZero = refs.filter(function (r) { return ncFaits[r.k] === undefined && r.stock === 0; }).length;
+        var attenteLocale = refs.filter(function (r) { return enCours[r.k] !== undefined; }).length;
+        racine.appendChild(el('p', { class: 'petit' }, [refs.length + ' référence' + (refs.length > 1 ? 's' : '') + ' sans comptage sur ' + Object.keys(D.refs).length
+          + (dejaZero ? ' · ' + dejaZero + ' déjà à 0' : '') + (attenteLocale ? ' · ' + attenteLocale + ' comptée' + (attenteLocale > 1 ? 's' : '') + ' sur ce téléphone mais pas encore validée' + (attenteLocale > 1 ? 's' : '') : '')]));
+        if (!refs.length) { racine.appendChild(el('div', { class: 'vide-msg' }, ['Tout a été compté cette année 👍'])); return; }
+        racine.appendChild(tableau(['Référence', 'Stock', ''], refs.map(function (r) {
+          function marquer(n) {
+            if (!saisir({ type: 'filtration.inventaire', reference: r.ref, compte: n, engin: r.engins[0] }, true)) return;
+            ncFaits[r.k] = n; afficher();
+          }
+          var fait = ncFaits[r.k] !== undefined;
+          return el('tr', { class: fait ? 'st-fait' : '' }, [
+            el('td', {}, [el('div', { class: 'st-ref' }, [r.ref]), el('div', { class: 'st-sous' }, [r.types.join(', ') + ' · ' + r.engins.slice(0, 3).join(', ') + (r.engins.length > 3 ? '…' : '')
+              + (enCours[r.k] !== undefined ? ' · compté ' + enCours[r.k] + ' (à valider)' : '')])]),
+            el('td', {}, [r.stock === null ? '—' : String(r.stock)]),
+            el('td', { class: 'st-nc-actions' }, fait ? [el('b', { class: 'st-plus' }, ['✓ ' + ncFaits[r.k]])] : [
+              r.stock === null ? null : el('button', { class: 'btn-second st-ok', type: 'button', title: 'Présent, stock inchangé', onclick: function () { marquer(r.stock); } }, ['✓']),
+              el('button', { class: 'btn-second st-ok st-nc-zero', type: 'button', title: 'Passer le stock à 0', onclick: function () { marquer(0); } }, ['Plus en stock'])])]);
+        }), 'st-inventaire fi-inv st-nc'));
+      }
+
       /* ---------- à commander ---------- */
       function ecranCommander(racine) {
         var bas = Object.keys(D.refs).map(function (k) { return D.refs[k]; }).filter(function (r) { return r.bas; })
@@ -695,13 +740,13 @@
         var k = K.histo + annee;
         if (histoEnCours[annee]) return histoEnCours[annee];
         return (histoEnCours[annee] = PM.DB.get(k).then(function (h) {
-          if (h && histoAnnee === annee) { histo = h; if (ecran === 'historique') afficher(); }
-          if (modeDemo) { histo = histo || { annee: annee, lignes: [], annees: [annee] }; if (ecran === 'historique') afficher(); return; }
+          if (h && histoAnnee === annee) { histo = h; if ((ecran === 'historique' || ecran === 'noncomptees')) afficher(); }
+          if (modeDemo) { histo = histo || { annee: annee, lignes: [], annees: [annee] }; if ((ecran === 'historique' || ecran === 'noncomptees')) afficher(); return; }
           return api('filtration.historique', { annee: annee }, 60000).then(function (j) {
             delete j.ok; PM.DB.set(k, j);
-            if (histoAnnee === annee) { histo = j; if (actif() && ecran === 'historique' && !document.querySelector('.ag-modale')) afficher(); }
+            if (histoAnnee === annee) { histo = j; if (actif() && (ecran === 'historique' || ecran === 'noncomptees') && !document.querySelector('.ag-modale')) afficher(); }
           })['catch'](function (e) {
-            if (!histo) { histo = { annee: annee, lignes: [], annees: [annee], erreur: (PM.raison ? PM.raison(e) : 'Hors ligne') + ' : ' + e.message }; if (ecran === 'historique') afficher(); }
+            if (!histo) { histo = { annee: annee, lignes: [], annees: [annee], erreur: (PM.raison ? PM.raison(e) : 'Hors ligne') + ' : ' + e.message }; if ((ecran === 'historique' || ecran === 'noncomptees')) afficher(); }
             else PM.toast((PM.raison ? PM.raison(e) : 'Hors ligne') + ' : historique du dernier chargement', 4000);
           });
         }).then(function () { delete histoEnCours[annee]; }, function () { delete histoEnCours[annee]; }));
