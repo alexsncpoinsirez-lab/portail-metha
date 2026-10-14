@@ -72,6 +72,19 @@ var PORTAIL_CONFIG = {
       outils: [
         { id: 'filtration-snc', nom: 'Listing filtration', description: 'Filtres par marque et engin : stock, inventaire annuel, alertes mail, historique', icone: 'filtre', type: 'interne', module: 'filtration' }
       ]
+    },
+    {
+      id: 'taches',
+      nom: 'Tâches',
+      sousTitre: 'Toutes les équipes — tableau de tâches',
+      couleur: '#b8651b',   // ambre : fond de l'outil
+      neon: '#ffb547',
+      // Adresse /exec de l'appli Apps Script « Trello Perso » (feuille Trello perso, avec Portail.gs).
+      // Vide = adresse à saisir dans Réglages ; en attendant, l'outil s'ouvre en démonstration.
+      apiUrl: '',
+      outils: [
+        { id: 'taches', nom: 'Tâches', description: 'Tableau de tâches par équipe : colonnes, exécutants, échéances, photos', icone: 'taches', type: 'interne', module: 'taches' }
+      ]
     }
   ],
 

@@ -401,6 +401,7 @@
     pompe: '<circle cx="10" cy="13" r="5.5"/><circle cx="10" cy="13" r="1.6"/><path d="M14 8.5h6v4M4.5 21h11M10 18.5V21"/>',
     document: '<path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6"/>',
     site: '<path d="M3 21h18M5 21V10l5-3v14M10 21V5l9 4v12M13 11h3M13 15h3"/>',
+    taches: '<path d="M4 5h4v14H4zM10 5h4v9h-4zM16 5h4v11h-4zM5.5 8.5h1M11.5 8.5h1M17.5 8.5h1"/>',
     fleche: '<path d="M9 5l7 7-7 7"/>'
   };
   function icone(nom, taille) {
