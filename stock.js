@@ -146,6 +146,14 @@
           casier: np.casier || '', cotes: '', substitution: '', reperes: '', photo: np.photo || '', partage: false, enAttente: true });
         return;
       }
+      if (a.type === 'stock.transferer' && a.mode === 'deplacer') a = Object.assign({}, a, { type: 'stock.supprimerPiece' });
+      if (a.type === 'stock.supprimerPiece') {
+        var idxS = -1;
+        m.pieces.forEach(function (p, i) { if (idxS < 0 && ((a.rowIndex && p.rowIndex === a.rowIndex && cle(p) === cle(a)) || (!a.rowIndex && cle(p) === cle(a)))) idxS = i; });
+        if (idxS < 0) m.pieces.forEach(function (p, i) { if (idxS < 0 && cle(p) === cle(a)) idxS = i; });
+        if (idxS >= 0) m.pieces.splice(idxS, 1);
+        return;
+      }
       if (TYPES_PIECE.indexOf(a.type) < 0) return;
       var cible = m.pieces.filter(function (p) { return a.rowIndex && p.rowIndex === a.rowIndex && cle(p) === cle(a); })[0]
         || m.pieces.filter(function (p) { return cle(p) === cle(a); })[0];
@@ -891,6 +899,80 @@
         return d;
       }
 
+      /* ---------- passer une pièce à l'autre site (copie commune ou déplacement) ---------- */
+      var autresSitesCache = null;
+      function ouvrirTransfert(p) {
+        var corps = el('div', {}, [el('p', { class: 'petit' }, ['Lecture des matériels de l’autre site…'])]);
+        var fermer = modale('⇄ Passer « ' + (p.designation || p.reference) + ' » à l’autre site', p.materiel, [corps]);
+        (autresSitesCache ? Promise.resolve(autresSitesCache) : api('stock.autresSites', {}, 60000).then(function (j) { return (autresSitesCache = j.sites || []); })).then(function (sites) {
+          corps.innerHTML = '';
+          if (!sites.length) { corps.appendChild(el('p', { class: 'petit' }, ['Aucun autre site configuré.'])); return; }
+          var choixSite = el('select', { class: 'st-select' }, sites.map(function (s) { return el('option', { value: s.id }, [s.nom]); }));
+          var choixMat = el('select', { class: 'st-select' });
+          var nouveauMat = el('input', { type: 'text', placeholder: 'Nom du nouveau matériel', autocomplete: 'off', hidden: 'hidden' });
+          function remplirMat() {
+            var s = sites.filter(function (x) { return x.id === choixSite.value; })[0] || { materiels: [] };
+            choixMat.innerHTML = '';
+            var liste = s.materiels.slice();
+            if (liste.indexOf(p.materiel) < 0) liste.unshift(p.materiel); // même nom de matériel proposé en premier
+            liste.forEach(function (m) { choixMat.appendChild(el('option', { value: m }, [m + (s.materiels.indexOf(m) < 0 ? ' (nouveau)' : '')])); });
+            choixMat.appendChild(el('option', { value: '__nouveau' }, ['+ Autre matériel…']));
+            choixMat.value = p.materiel; // même matériel que ici, proposé par défaut
+            nouveauMat.hidden = true;
+          }
+          choixSite.addEventListener('change', remplirMat);
+          choixMat.addEventListener('change', function () { nouveauMat.hidden = choixMat.value !== '__nouveau'; if (!nouveauMat.hidden) setTimeout(function () { nouveauMat.focus(); }, 30); });
+          remplirMat();
+          var mode = p.reference ? 'copier' : 'deplacer';
+          var chipCopier = el('button', { type: 'button', class: 'st-chip' + (mode === 'copier' ? ' actif' : ''), disabled: p.reference ? null : 'disabled', onclick: function () { mode = 'copier'; maj(); } }, ['Copier (commune aux deux)']);
+          var chipDeplacer = el('button', { type: 'button', class: 'st-chip' + (mode === 'deplacer' ? ' actif' : ''), onclick: function () { mode = 'deplacer'; maj(); } }, ['Déplacer (retirée d’ici)']);
+          var aide = el('p', { class: 'petit' });
+          function maj() {
+            chipCopier.classList.toggle('actif', mode === 'copier'); chipDeplacer.classList.toggle('actif', mode === 'deplacer');
+            aide.textContent = mode === 'copier'
+              ? 'La pièce apparaîtra sur les deux sites avec la même quantité (' + p.quantiteStock + ') et le même seuil. Le rangement reste propre à chaque site.'
+              : 'La pièce est recréée là-bas (quantité ' + p.quantiteStock + ', photos, côtes, repères) puis retirée d’ici.';
+            var bp = corps.querySelector('.btn-principal'); if (bp) bp.textContent = mode === 'copier' ? 'Copier' : 'Déplacer';
+          }
+          maj();
+          var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
+          corps.appendChild(el('div', { class: 'champ' }, [el('label', {}, ['Vers le site']), choixSite]));
+          corps.appendChild(el('div', { class: 'champ' }, [el('label', {}, ['Dans le matériel']), choixMat, nouveauMat]));
+          corps.appendChild(el('div', { class: 'champ' }, [el('label', {}, ['Comment']), el('div', { class: 'st-actions' }, [chipCopier, chipDeplacer]), aide]));
+          if (!p.reference) corps.appendChild(el('p', { class: 'petit' }, ['Sans référence, la pièce ne peut pas être commune : seul le déplacement est possible.']));
+          corps.appendChild(msg);
+          corps.appendChild(el('button', { class: 'btn-principal', type: 'button', onclick: function () {
+            var mat = choixMat.value === '__nouveau' ? nouveauMat.value.trim() : choixMat.value;
+            if (!mat) { msg.textContent = 'Indique le matériel de destination.'; msg.hidden = false; nouveauMat.focus(); return; }
+            var siteNom = (sites.filter(function (x) { return x.id === choixSite.value; })[0] || {}).nom || 'l’autre site';
+            fermer();
+            var m2 = document.querySelectorAll('.ag-modale'); if (m2.length) m2[m2.length - 1].remove(); // ferme aussi la fiche
+            if (mode === 'copier') { autresSitesCache = null; }
+            saisir(Object.assign({ type: 'stock.transferer', versSite: choixSite.value, versMateriel: mat, mode: mode, quantite: p.quantiteStock }, refPiece(p)));
+            PM.toast((mode === 'copier' ? 'Copiée vers ' : 'Déplacée vers ') + siteNom + ' / ' + mat + (navigator.onLine ? '' : ' · envoi au retour du réseau'), 4000);
+          } }, [mode === 'copier' ? 'Copier' : 'Déplacer']));
+        })['catch'](function (e) { corps.innerHTML = ''; corps.appendChild(el('p', { class: 'bg-erreur' }, ['Impossible de lire l’autre site : ' + e.message])); });
+      }
+
+      /* ---------- suppression d'une pièce (deux appuis, pas de fenêtre système) ---------- */
+      function boutonSupprimerPiece(p) {
+        var b = el('button', { class: 'btn-second st-large st-danger', type: 'button' }, ['🗑 Supprimer cette pièce du listing']);
+        var arme = false, timer = null;
+        b.onclick = function () {
+          if (!arme) {
+            arme = true; b.classList.add('arme');
+            b.textContent = 'Confirmer la suppression' + (p.partage ? ' (la ligne de ' + ((p.communAvec || [])[0] || 'l’autre site') + ' est conservée)' : '') + ' ?';
+            timer = setTimeout(function () { arme = false; b.classList.remove('arme'); b.textContent = '🗑 Supprimer cette pièce du listing'; }, 5000);
+            return;
+          }
+          clearTimeout(timer);
+          var modales = document.querySelectorAll('.ag-modale'); if (modales.length) modales[modales.length - 1].remove();
+          saisir(Object.assign({ type: 'stock.supprimerPiece', quantite: p.quantiteStock }, refPiece(p)));
+          PM.toast('Pièce supprimée' + (navigator.onLine ? '' : ' · envoi au retour du réseau'));
+        };
+        return b;
+      }
+
       /* ---------- fiche pièce ---------- */
       var rafraichirFiche = null;
       function ouvrirFiche(p0) {
@@ -948,6 +1030,9 @@
             el('button', { class: 'btn-second', type: 'button', onclick: function () { imprimerQr([p], p.designation || p.reference); } }, ['🖨 Imprimer']),
             el('button', { class: 'btn-second', type: 'button', onclick: function () { ouvrirPanier(p); } }, ['🛒 Panier']),
             el('button', { class: 'btn-second', type: 'button', onclick: scanner }, ['📷 Scanner suivant'])]));
+          if (!p.enAttente) corps.appendChild(el('div', { class: 'st-section st-suppr-piece' }, [
+            modeDemo ? null : el('button', { class: 'btn-second st-large', type: 'button', onclick: function () { ouvrirTransfert(p); } }, ['⇄ Passer à l’autre site']),
+            boutonSupprimerPiece(p)]));
         }
         function remplirDocs(zone, p) {
           if (!p.reference) { zone.appendChild(el('p', { class: 'petit' }, ['Pas de référence sur cette pièce : impossible d’y associer un document.'])); return; }
