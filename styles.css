@@ -1215,3 +1215,15 @@ body.futur[data-site="taches"] .btn-second.actif, body.futur[data-site="taches"]
 .tp-col-ligne .tp-col-nom { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tp-col-ligne .pp-icone:disabled { opacity: .3; }
 .tp-col-ligne .tp-pastille { margin: 0; border: 0; }
+/* Sur grand écran, le tableau de tâches prend toute la largeur : on voit plusieurs colonnes à la fois */
+@media (min-width: 900px) {
+  body[data-site="taches"] .vue { max-width: none; padding-left: 24px; padding-right: 24px; }
+  body[data-site="taches"] .tp-board { gap: 14px; margin: 0; padding-bottom: 20px; align-items: flex-start; }
+  body[data-site="taches"] .tp-col { flex-basis: 280px; max-width: 320px; min-height: 60vh; }
+  body[data-site="taches"] .tp-onglets { display: none; }
+  body[data-site="taches"] .tp-barre .tp-filtre { max-width: 320px; }
+}
+
+.st-suppr-piece { margin-top: 14px; }
+.st-danger { color: var(--alerte, #c0392b); border-color: var(--alerte, #c0392b) !important; }
+.st-danger.arme { background: var(--alerte, #c0392b) !important; color: #fff; }
