@@ -1460,7 +1460,7 @@
             liste.slice(0, 200).forEach(function (x) { d.appendChild(el('div', { class: 'st-emplacement' }, [texte(x)])); });
             zone.appendChild(d);
           }
-          bloc('Écarts entre une ligne et le stock commun', 'La quantité écrite sur la ligne ne correspond pas à la quantité partagée (Stock_Commun). Le bouton ci-dessous les remet d’accord.', r.ecarts || [],
+          bloc('Écarts entre une ligne et le stock commun', 'La quantité écrite sur la ligne (celle que l’appli affiche) ne correspond pas à la copie du stock commun : souvent une correction faite à la main dans Sheets. « Mettre en commun maintenant » (plus bas) remet tout d’accord.', r.ecarts || [],
             function (x) { return x.ou + ', ligne ' + x.ligne + ' : ' + (x.designation || x.reference) + ' — ligne ' + x.ligneQte + ', stock commun ' + x.commun; });
           bloc('Références en double dans un même matériel', 'Deux lignes avec la même référence dans le même onglet : elles partagent la même quantité, une seule suffit.', r.doublons || [],
             function (x) { return x.ou + ', lignes ' + x.autreLigne + ' et ' + x.ligne + ' : ' + x.reference + ' (' + x.designation + ')'; });
@@ -1476,10 +1476,7 @@
             function (x) { return x.reference + ' (' + x.designation + ') — ligne ' + x.ligne; });
           bloc('Colonnes inconnues', 'Colonnes que l’appli n’utilise pas (ex. « Column 1 », prix…) : à renommer ou supprimer si inutiles.', r.colonnes || [],
             function (x) { return x.ou + ', colonne ' + x.colonne + ' : « ' + x.titre + ' »'; });
-          if ((r.ecarts || []).length) zone.appendChild(el('button', { class: 'btn-principal', type: 'button', onclick: function () {
-            if (!confirm('Recopier la quantité du stock commun sur toutes les lignes concernées des deux listings ?')) return;
-            saisir({ type: 'stock.synchroniser' }); PM.toast('Alignement demandé : il part avec les autres saisies.');
-          } }, ['Aligner les quantités sur le stock commun']));
+          // (les feuilles font foi : les écarts se règlent par la mise en commun, bloc ci-dessous)
           if (!total) zone.insertBefore(el('div', { class: 'vide-msg' }, ['Tout est propre 👍']), zone.firstChild);
           zone.appendChild(blocMiseEnCommun());
         })['catch'](function (e) { zone.innerHTML = ''; zone.appendChild(el('div', { class: 'vide-msg' }, ['Contrôle indisponible : ' + e.message])); });
