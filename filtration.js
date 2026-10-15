@@ -575,6 +575,8 @@
       function cleInv() { return 'fi_inv_' + S + '_' + new Date().getFullYear(); }
       function ecranInventaire(racine) {
         var comptes = PM.Prefs.get(cleInv(), {}) || {};
+        // stock théorique affiché au moment du comptage : le serveur ajoute les mouvements faits entre-temps par les autres
+        var vus = PM.Prefs.get(cleInv() + '_vu', {}) || {};
         var refs = Object.keys(D.refs).map(function (k) { return D.refs[k]; });
         function marqueDe(r) { var e = D.engins.filter(function (x) { return x.nom === r.engins[0]; })[0]; return e ? e.marque : SANS_MARQUE; }
         refs.forEach(function (r) { r.marque = marqueDe(r); });
@@ -606,7 +608,7 @@
         racine.appendChild(el('div', { class: 'st-actions fi-inv-bas' }, [btnValider,
           el('button', { class: 'btn-second st-mini', type: 'button', onclick: function () {
             if (!nbFaits() || !window.confirm('Effacer tout le comptage en cours sur ce téléphone ?')) return;
-            comptes = {}; PM.Prefs.set(cleInv(), comptes); remplir(); majProgres();
+            comptes = {}; PM.Prefs.set(cleInv(), comptes); vus = {}; PM.Prefs.set(cleInv() + '_vu', vus); remplir(); majProgres();
           } }, ['Effacer le comptage'])]));
         function remplir() {
           zone.innerHTML = '';
@@ -629,8 +631,9 @@
                 el('button', { type: 'button', tabindex: '-1', onclick: function () { var v = entier(inp.value, 0); inp.value = String((isNaN(v) ? 0 : v) + 1); noter(); } }, ['+'])]), ecart])]);
             function noter() {
               var v = entier(inp.value, 0);
-              if (texte(inp.value) === '' || isNaN(v)) delete comptes[r.k]; else comptes[r.k] = v;
-              PM.Prefs.set(cleInv(), comptes);
+              if (texte(inp.value) === '' || isNaN(v)) { delete comptes[r.k]; delete vus[r.k]; }
+              else { comptes[r.k] = v; if (r.stock !== null && vus[r.k] === undefined) vus[r.k] = r.stock; }
+              PM.Prefs.set(cleInv(), comptes); PM.Prefs.set(cleInv() + '_vu', vus);
               tr.classList.toggle('st-fait', comptes[r.k] !== undefined);
               ecart.textContent = comptes[r.k] === undefined || r.stock === null || comptes[r.k] === r.stock ? '' : (comptes[r.k] > r.stock ? '+' : '') + (comptes[r.k] - r.stock);
               ecart.className = 'st-ecart ' + (comptes[r.k] > r.stock ? 'st-plus' : 'st-moins');
@@ -654,8 +657,8 @@
           if (!window.confirm('Valider l’inventaire de ' + ks.length + ' référence' + (ks.length > 1 ? 's' : '') + ' ?\n' + ecarts + ' stock' + (ecarts > 1 ? 's' : '') + ' vont changer.\nLes envois partent tout seuls (même sans réseau maintenant).')) return;
           var agent = PM.Prefs.get('agent', '');
           if (!agent) { demanderAgent(function () { btnValider.click(); }); return; }
-          ks.forEach(function (k) { saisir({ type: 'filtration.inventaire', reference: D.refs[k].ref, compte: comptes[k], engin: D.refs[k].engins[0] }, true); });
-          comptes = {}; PM.Prefs.set(cleInv(), comptes);
+          ks.forEach(function (k) { saisir({ type: 'filtration.inventaire', reference: D.refs[k].ref, compte: comptes[k], vu: vus[k] !== undefined ? vus[k] : D.refs[k].stock, engin: D.refs[k].engins[0] }, true); });
+          comptes = {}; PM.Prefs.set(cleInv(), comptes); vus = {}; PM.Prefs.set(cleInv() + '_vu', vus);
           PM.toast('Inventaire enregistré : ' + ks.length + ' références', 4000);
           aller('commander');
         });
@@ -697,7 +700,7 @@
         if (!refs.length) { racine.appendChild(el('div', { class: 'vide-msg' }, ['Toutes les références ont été touchées cette année 👍'])); return; }
         racine.appendChild(tableau(['Référence', 'Stock', ''], refs.map(function (r) {
           function marquer(n) {
-            if (!saisir({ type: 'filtration.inventaire', reference: r.ref, compte: n, engin: r.engins[0] }, true)) return;
+            if (!saisir({ type: 'filtration.inventaire', reference: r.ref, compte: n, vu: r.stock, engin: r.engins[0] }, true)) return;
             ncFaits[r.k] = n; afficher();
           }
           var fait = ncFaits[r.k] !== undefined;

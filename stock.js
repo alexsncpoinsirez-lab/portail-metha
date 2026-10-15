@@ -722,7 +722,7 @@
             fermer();
             if (change) saisir(Object.assign({ type: 'stock.casier', casier: casier }, refPiece(p)));
             invFaits[p.materiel + '|' + cle(p)] = n;
-            saisir(Object.assign({ type: 'stock.quantite', absolu: true, compte: n, motif: 'Inventaire' }, refPiece(p)));
+            saisir(Object.assign({ type: 'stock.quantite', absolu: true, compte: n, vu: p.quantiteStock, motif: 'Inventaire' }, refPiece(p)));
           } }, ['Ranger et enregistrer'])]);
         setTimeout(function () { inp.focus(); inp.select(); }, 30);
       }
@@ -766,7 +766,7 @@
             var n = entier(inp.value, 0);
             if (isNaN(n)) { inp.focus(); return false; }
             invFaits[k] = n;
-            saisir(Object.assign({ type: 'stock.quantite', absolu: true, compte: n, motif: 'Inventaire' }, refPiece(p)));
+            saisir(Object.assign({ type: 'stock.quantite', absolu: true, compte: n, vu: p.quantiteStock, motif: 'Inventaire' }, refPiece(p)));
             return true;
           }
           inp.addEventListener('input', majEcart);
@@ -849,7 +849,7 @@
               var info = x.dernier ? 'dernière modification le ' + new Date(x.dernier).toLocaleDateString('fr-FR') : 'jamais modifiée';
               function marquer(n) {
                 invFaits[k] = n;
-                saisir(Object.assign({ type: 'stock.quantite', absolu: true, compte: n, motif: n === 0 ? 'Inventaire — plus en stock' : 'Inventaire' }, refPiece(p)));
+                saisir(Object.assign({ type: 'stock.quantite', absolu: true, compte: n, vu: p.quantiteStock, motif: n === 0 ? 'Inventaire — plus en stock' : 'Inventaire' }, refPiece(p)));
               }
               return el('tr', { class: invFaits[k] !== undefined ? 'st-fait' : '' }, [
                 el('td', {}, [p.designation, el('div', { class: 'st-sous' }, [(p.reference || 'sans réf.') + ' · ' + (p.casier ? rangementTexte(p.casier) : 'sans rangement')]), el('div', { class: 'st-sous' }, [info])]),
