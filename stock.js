@@ -484,6 +484,17 @@
         champ.addEventListener('input', function () { filtre = champ.value; remplir(); });
         remplir();
       }
+      /* Repère des pièces communes aux deux sites (même quantité, même seuil ; rangement propre à chaque site) */
+      function texteCommun(p) {
+        if (!p.partage) return '';
+        var autres = p.communAvec || [];
+        return autres.length ? 'Commune avec ' + autres.join(' et ') + ' : même quantité et même seuil sur les deux sites (rangement propre à chaque site)' : 'Référence présente plusieurs fois sur ce site : même quantité partagée';
+      }
+      function badgeCommun(p) {
+        if (!p.partage) return null;
+        var autres = p.communAvec || [];
+        return el('span', { class: 'st-badge st-partage', title: texteCommun(p) }, ['🔗 ' + (autres.length ? 'Commune' : 'Partagée')]);
+      }
       // avecMateriel : vue recherche / casier (la 2e colonne montre le matériel)
       function lignePiece(p, avecMateriel) {
         var sous = [];
@@ -491,7 +502,7 @@
         if (p.reperes) sous.push('rep. ' + p.reperes);
         if (p.substitution) sous.push('subst. ' + p.substitution);
         var badges = [
-          p.partage ? el('span', { class: 'st-badge st-partage', title: 'Référence retrouvée sur un autre site ou matériel : stock partagé' }, ['🔗 Partagé']) : null,
+          badgeCommun(p),
           p.stockBas ? el('span', { class: 'st-badge st-alerte' }, ['Stock bas']) : null,
           p.enAttente ? el('span', { class: 'st-badge st-envoi' }, ['à envoyer']) : null];
         var cellQte = el('td', {}, [el('button', { class: 'st-qte', type: 'button', title: 'Modifier la quantité', onclick: function () { ouvrirQuantite(p); } }, [String(p.quantiteStock)]),
@@ -848,6 +859,38 @@
         });
       }
 
+      /* ---------- mise en commun des pièces des deux sites ---------- */
+      function blocMiseEnCommun() {
+        var d = el('div', { class: 'bandeau st-controle' });
+        var zoneR = el('div');
+        function rapport(r, titre) {
+          zoneR.innerHTML = '';
+          if (!r) return;
+          var n = (r.corrections || []).length;
+          zoneR.appendChild(el('p', { class: 'petit' }, [(titre || 'Dernière mise en commun') + ' : ' + (r.date ? new Date(r.date).toLocaleString('fr-FR') : '') + ' — '
+            + r.communes + ' référence' + (r.communes > 1 ? 's' : '') + ' commune' + (r.communes > 1 ? 's' : '') + ', ' + n + ' ligne' + (n > 1 ? 's' : '') + ' corrigée' + (n > 1 ? 's' : '')
+            + ((r.fusions || []).length ? ', ' + r.fusions.length + ' doublon(s) fusionné(s)' : '') + ((r.nouvelles || []).length ? ', ' + r.nouvelles.length + ' ajoutée(s) au stock commun' : '') + '.']));
+          (r.corrections || []).slice(0, 200).forEach(function (c) {
+            zoneR.appendChild(el('div', { class: 'st-emplacement' }, [c.ou + ', ligne ' + c.ligne + ' : ' + (c.designation || c.reference) + ' (' + c.reference + ') — ' + c.avant + ' → ' + c.apres
+              + (c.seuilAvant !== c.seuilApres ? ', seuil ' + c.seuilAvant + ' → ' + c.seuilApres : '') + ' · ' + c.regle]));
+          });
+        }
+        var btn = el('button', { class: 'btn-principal', type: 'button', onclick: function () {
+          if (!confirm('Mettre en commun les pièces présentes sur les deux sites ?\nMême quantité et même seuil sur toutes leurs lignes (la ligne modifiée le plus récemment fait foi). Le rangement n’est pas touché.')) return;
+          btn.disabled = true; btn.textContent = 'Mise en commun en cours…';
+          api('stock.communiser', {}, 180000).then(function (j) {
+            btn.disabled = false; btn.textContent = '🔗 Mettre en commun maintenant';
+            rapport(j.rapport, 'Mise en commun faite');
+            PM.toast('Mise en commun terminée'); rechargerPlusTard(); charger(false);
+          })['catch'](function (e) { btn.disabled = false; btn.textContent = '🔗 Mettre en commun maintenant'; PM.toast('Impossible : ' + e.message, 5000); });
+        } }, ['🔗 Mettre en commun maintenant']);
+        d.appendChild(el('b', {}, ['Pièces communes aux deux sites']));
+        d.appendChild(el('p', { class: 'petit' }, ['Toute référence présente sur les deux listings partage une seule quantité et un seul seuil (le rangement reste propre à chaque site). Les lignes en écart sont corrigées, l’historique le note (motif « Mise en commun »). Un contrôle de nuit refait la même chose et t’envoie un mail s’il a corrigé quelque chose.']));
+        d.appendChild(btn); d.appendChild(zoneR);
+        if (!modeDemo) api('stock.communRapport', {}, 60000).then(function (j) { rapport(j.rapport); })['catch'](function () {});
+        return d;
+      }
+
       /* ---------- fiche pièce ---------- */
       var rafraichirFiche = null;
       function ouvrirFiche(p0) {
@@ -875,6 +918,7 @@
             ligne('Seuil mini', p.seuil, function () { editerSeuil(p); }),
             ligne('À commander', p.quantiteACommander),
             ligne('Référence', p.reference, function () { editerTexte(p, 'Référence', 'reference', 'stock.reference', false); }),
+            p.partage ? ligne('🔗 Stock commun', (p.communAvec || []).length ? 'avec ' + p.communAvec.join(' et ') + ' — même quantité, même seuil' : 'présente plusieurs fois sur ce site') : [],
             p.ancienneReference ? ligne('Ancienne réf.', p.ancienneReference) : [],
             p.cotes ? ligne('Côtes', p.cotes) : [], p.substitution ? ligne('Substitution', p.substitution) : [], p.reperes ? ligne('Repères', p.reperes) : []
           ).forEach(function (n) { dl.appendChild(n); });
@@ -1352,6 +1396,7 @@
             saisir({ type: 'stock.synchroniser' }); PM.toast('Alignement demandé : il part avec les autres saisies.');
           } }, ['Aligner les quantités sur le stock commun']));
           if (!total) zone.insertBefore(el('div', { class: 'vide-msg' }, ['Tout est propre 👍']), zone.firstChild);
+          zone.appendChild(blocMiseEnCommun());
         })['catch'](function (e) { zone.innerHTML = ''; zone.appendChild(el('div', { class: 'vide-msg' }, ['Contrôle indisponible : ' + e.message])); });
       }
 
