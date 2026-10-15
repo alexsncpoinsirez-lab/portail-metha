@@ -882,6 +882,16 @@
             zoneR.appendChild(el('div', { class: 'st-emplacement' }, [c.ou + ', ligne ' + c.ligne + ' : ' + (c.designation || c.reference) + ' (' + c.reference + ') — ' + c.avant + ' → ' + c.apres
               + (c.seuilAvant !== c.seuilApres ? ', seuil ' + c.seuilAvant + ' → ' + c.seuilApres : '') + ' · ' + c.regle]));
           });
+          var orph = r.sansCorrespondance || [];
+          if (orph.length) {
+            zoneR.appendChild(el('p', { class: 'petit st-orphelines' }, [el('b', {}, ['⚠ ' + orph.length + ' ligne' + (orph.length > 1 ? 's' : '') + ' cochée' + (orph.length > 1 ? 's' : '') + ' OUI sans équivalent sur l’autre site']),
+              ' — à corriger dans le Sheet (même référence des deux côtés, ou même désignation exacte quand il n’y a pas de référence) :']));
+            orph.forEach(function (o) {
+              var txt = o.ou + ', ligne ' + o.ligne + ' : ' + (o.designation || o.reference) + (o.reference ? ' (' + o.reference + ')' : ' (sans référence)');
+              var pistes = (o.pistes || []).map(function (q) { return q.ou + ' l.' + q.ligne + ' « ' + (q.designation || q.reference) + ' »' + (q.reference ? ' (' + q.reference + ')' : '') + (q.commun === 'NON' ? ' — marquée NON' : ''); });
+              zoneR.appendChild(el('div', { class: 'st-emplacement' }, [txt, pistes.length ? el('div', { class: 'petit' }, ['↳ ressemble à : ' + pistes.join(' ; ')]) : null]));
+            });
+          }
         }
         var btn = el('button', { class: 'btn-principal', type: 'button', onclick: function () {
           if (!confirm('Mettre en commun les pièces présentes sur les deux sites ?\nMême quantité et même seuil sur toutes leurs lignes (la ligne modifiée le plus récemment fait foi). Le rangement n’est pas touché.')) return;
@@ -893,7 +903,7 @@
           })['catch'](function (e) { btn.disabled = false; btn.textContent = '🔗 Mettre en commun maintenant'; PM.toast('Impossible : ' + e.message, 5000); });
         } }, ['🔗 Mettre en commun maintenant']);
         d.appendChild(el('b', {}, ['Pièces communes aux deux sites']));
-        d.appendChild(el('p', { class: 'petit' }, ['Toute référence présente sur les deux listings partage une seule quantité et un seul seuil (le rangement reste propre à chaque site). Les lignes en écart sont corrigées, l’historique le note (motif « Mise en commun »). Un contrôle de nuit refait la même chose et t’envoie un mail s’il a corrigé quelque chose.']));
+        d.appendChild(el('p', { class: 'petit' }, ['La colonne « Commun » du Sheet décide : NON = jamais partagée ; OUI (ou vide) avec une référence = partagée avec toute ligne de même référence ; OUI sans référence = partagée avec la ligne de même désignation exacte. Même quantité et même seuil partout (le rangement reste propre à chaque site). Les lignes en écart sont corrigées, l’historique le note (motif « Mise en commun »). Un contrôle de nuit refait la même chose et t’envoie un mail s’il a corrigé quelque chose.']));
         d.appendChild(btn); d.appendChild(zoneR);
         if (!modeDemo) api('stock.communRapport', {}, 60000).then(function (j) { rapport(j.rapport); })['catch'](function () {});
         return d;
