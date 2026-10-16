@@ -1156,6 +1156,7 @@
         var fermer = modale('Modifier : ' + lib.toLowerCase(), note, [el('div', { class: 'champ' }, [el('label', {}, [lib]), inp]),
           el('button', { class: 'btn-principal', type: 'button', onclick: function () {
             var v = inp.value.trim();
+            if (type === 'stock.reference') v = v.replace(/,/g, '.'); // virgules -> points (choix d'Alex)
             if (obligatoire && !v) { inp.focus(); return; }
             if (v === (p[champ] || '')) { fermer(); return; }
             if (!confirm('Changer « ' + (p[champ] || 'non renseigné') + ' » en « ' + (v || 'non renseigné') + ' » ?')) return;
@@ -1253,7 +1254,7 @@
           var q = entier(c.quantite.value, 0), s = entier(c.seuil.value, 0);
           if (!c.designation.value.trim()) { msg.textContent = 'La désignation est obligatoire.'; msg.hidden = false; return; }
           if (isNaN(q) || isNaN(s)) { msg.textContent = 'Quantité et seuil : nombres entiers (0 ou plus).'; msg.hidden = false; return; }
-          var ref = c.reference.value.trim();
+          var ref = c.reference.value.trim().replace(/,/g, '.'); // virgules -> points (choix d'Alex)
           if (ref && pieces(materiel).some(function (p) { return p.reference === ref; }) && !confirm('Cette référence existe déjà dans ' + materiel + '. L’ajouter quand même ?')) return;
           var piece = { designation: c.designation.value.trim(), reference: ref, quantiteStock: q, seuil: s, casier: c.casier.valeur() };
           var fichier = c.photo.files[0];
