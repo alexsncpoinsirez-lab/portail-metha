@@ -27,6 +27,18 @@
     var d = new Date(iso.length <= 10 ? iso + 'T00:00:00' : iso);
     return isNaN(d) ? iso : d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
   }
+  // Serveur ancien ou feuille modifiée à la main : exécutants « a|b » → liste ; date (Date / ISO) → AAAA-MM-JJ
+  // (sinon le champ Échéance s'affichait vide et une modification effaçait l'échéance)
+  function listeNoms(a) {
+    if (Array.isArray(a)) return a.filter(Boolean);
+    return String(a === null || a === undefined ? '' : a).split('|').map(function (n) { return n.trim(); }).filter(Boolean);
+  }
+  function jourIso(x) {
+    var t = texte(x);
+    if (!t || /^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+    var d = new Date(t);
+    return isNaN(d) ? t : d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
   function aujourdhui() { var n = new Date(); return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0'); }
   function estTermine(statut) { return !!statut && (statut.id === 'done' || /termin|effectu|fait$/i.test(statut.label || '')); }
   function echeance(t, statut) {
@@ -88,7 +100,7 @@
   function calculer(T, attente) {
     var sites = (T.sites || []).map(function (s) { return Object.assign({}, s); });
     var statuts = (T.statuts || []).map(function (s) { return Object.assign({}, s); });
-    var taches = (T.taches || []).map(function (t) { return Object.assign({}, t, { assignees: (t.assignees || []).slice() }); });
+    var taches = (T.taches || []).map(function (t) { return Object.assign({}, t, { assignees: listeNoms(t.assignees), dueDate: jourIso(t.dueDate), requestedAt: jourIso(t.requestedAt) }); });
     var operateurs = (T.operateurs || []).map(function (o) { return Object.assign({}, o); });
     var photos = (T.photos || []).map(function (p) { return Object.assign({}, p); });
     function site(id) { return sites.filter(function (s) { return s.id === id; })[0]; }
@@ -180,11 +192,22 @@
         })['catch'](function (e) {
           if (premier) {
             vue.innerHTML = '';
-            vue.appendChild(el('div', { class: 'vide-msg' }, ['Impossible de charger les tâches.', el('br'), el('span', { class: 'petit' }, [e.message]), el('br'), el('br'),
+            vue.appendChild(el('div', { class: 'vide-msg' }, ['Impossible de charger les tâches.', el('br'), el('span', { class: 'petit' }, [e.message]), el('br'),
+              el('span', { class: 'petit' }, [conseil(e)]), el('br'), el('br'),
               el('button', { class: 'btn-second', type: 'button', onclick: function () { vue.innerHTML = ''; vue.appendChild(el('div', { class: 'chargement' }, [el('div', { class: 'squelette' })])); charger(true); } }, ['Réessayer']), ' ',
               el('button', { class: 'btn-second', type: 'button', onclick: function () { location.hash = 'reglages'; } }, ['Ouvrir les réglages'])]));
-          } else PM.toast((PM.raison ? PM.raison(e) : 'Hors ligne') + ' : tâches du dernier chargement', 4000);
+          } else PM.toast((PM.raison ? PM.raison(e) : 'Hors ligne') + ' : tâches du dernier chargement affichées. ' + conseil(e), 6000);
         });
+      }
+      // Que faire après un échec de chargement (« Connexion coupée » = souvent le déploiement du serveur Tâches)
+      function conseil(e) {
+        var t = e && e.type, m = (e && e.message) || '';
+        if (/cl[ée] du site/i.test(m)) return 'Vérifie l’adresse /exec et la clé de la carte Tâches dans Réglages (clé affichée par initialiserApi).';
+        if (t === 'reseau') return navigator.onLine === false ? 'Pas de réseau : réessaie quand le téléphone capte.'
+          : 'Si le réseau marche ailleurs : le serveur Tâches n’est sans doute pas déployé en « Exécuter en tant que : Moi » + « Accès : Tout le monde », ou la nouvelle version n’a pas été créée (voir LISEZ-MOI de l’appli Trello perso).';
+        if (t === 'delai' || t === 'occupe') return 'Le serveur est lent ou occupé : réessaie dans une minute.';
+        if (t === 'page') return 'Le serveur Tâches renvoie une page Google : dans l’éditeur Apps Script, lance initialiserApi (accepte l’autorisation) puis vérifie le déploiement (Accès : Tout le monde).';
+        return 'Réessaie dans une minute. Si ça continue, vérifie l’appli Trello perso (éditeur Apps Script → Exécutions).';
       }
       function nettoyerAttente() {
         return Promise.all([PM.DB.listerEnvois(), PM.DB.get(K.attente)]).then(function (r) {

@@ -83,6 +83,16 @@
     return el('div', { class: 'bandeau st-tableau' }, [el('table', { class: 'nh3-table st-table' + (classe ? ' ' + classe : '') }, [
       el('thead', {}, [el('tr', {}, entetes.map(function (h) { return el('th', {}, [h]); }))]), tbody])]);
   }
+  // Que faire après un échec de lecture / d'envoi (message simple pour l'équipe)
+  function conseil(e) {
+    var t = e && e.type, m = (e && e.message) || '';
+    if (/cl[ée] du site/i.test(m)) return 'Vérifie l’adresse /exec et la clé du site SNC Poinsirez dans Réglages (clé affichée par initialiserApi).';
+    if (t === 'reseau') return navigator.onLine === false ? 'Pas de réseau : réessaie quand le téléphone capte.'
+      : 'Réessaie. Si ça recommence alors que le réseau marche : vérifie le déploiement de l’appli Filtration (Exécuter en tant que : Moi, Accès : Tout le monde).';
+    if (t === 'delai' || t === 'occupe') return 'Le serveur est lent ou occupé : réessaie dans une minute.';
+    if (t === 'page') return 'Le serveur Filtration renvoie une page Google : ouvre l’éditeur Apps Script, lance initialiserApi (accepte l’autorisation) et vérifie le déploiement (Accès : Tout le monde).';
+    return 'Réessaie dans une minute. Si ça continue, note ce message et vérifie l’appli Filtration (éditeur Apps Script → Exécutions).';
+  }
   function champ(label, input, aide) {
     return el('div', { class: 'champ' }, [el('label', {}, [label]), input, aide ? el('div', { class: 'petit' }, [aide]) : null]);
   }
@@ -202,10 +212,11 @@
         })['catch'](function (e) {
           if (premier) {
             vue.innerHTML = '';
-            vue.appendChild(el('div', { class: 'vide-msg' }, ['Impossible de charger le listing filtration.', el('br'), el('span', { class: 'petit' }, [e.message]), el('br'), el('br'),
+            vue.appendChild(el('div', { class: 'vide-msg' }, ['Impossible de charger le listing filtration.', el('br'), el('span', { class: 'petit' }, [e.message]), el('br'),
+              el('span', { class: 'petit' }, [conseil(e)]), el('br'), el('br'),
               el('button', { class: 'btn-second', onclick: function () { vue.innerHTML = ''; vue.appendChild(el('div', { class: 'fi-attente-page' }, [el('div', { class: 'pm-roue' }), el('div', {}, ['Nouvel essai…'])])); charger(true); } }, ['Réessayer']), ' ',
               el('button', { class: 'btn-second', onclick: function () { location.hash = 'reglages'; } }, ['Ouvrir les réglages'])]));
-          } else PM.toast((PM.raison ? PM.raison(e) : 'Hors ligne') + ' : listing du dernier chargement', 4000);
+          } else PM.toast((PM.raison ? PM.raison(e) : 'Hors ligne') + ' : listing du dernier chargement affiché. ' + conseil(e), 6000);
         });
       }
       function saisieEnCours() { var a = document.activeElement; return ecran === 'inventaire' && a && a.tagName === 'INPUT'; }
@@ -278,9 +289,36 @@
         vue.appendChild(racine);
         if (modeDemo) racine.appendChild(el('div', { class: 'bandeau', style: 'border-color:var(--attente)' }, [
           el('b', {}, ['Mode démonstration. ']), el('span', { class: 'petit' }, ['Données d’exemple, rien n’est envoyé. Une fois ton appli Filtration branchée (adresse /exec + clé), renseigne-la dans ']), el('a', { href: '#reglages' }, ['Réglages']), '.']));
+        var soucis = soucisAVoir();
+        if (soucis.length) racine.appendChild(bandeauSoucis(soucis));
         racine.appendChild(barreOutils());
         ({ engins: ecranEngins, engin: ecranEngin, inventaire: ecranInventaire, noncomptees: ecranNonComptees, historique: ecranHistorique, commander: ecranCommander }[ecran] || ecranMarques)(racine);
         window.scrollTo(0, y);
+      }
+      /* ---------- soucis du serveur (alerte stock bas non envoyée, historique non écrit…) ---------- */
+      function cleSoucisVu() { return 'fi_soucis_vu_' + S; }
+      function soucisAVoir() {
+        var vu = PM.Prefs.get(cleSoucisVu(), '') || '';
+        return ((T && T.soucis) || []).filter(function (x) { return x && x.quand && String(x.quand) > vu; });
+      }
+      function bandeauSoucis(liste) {
+        var alertes = liste.filter(function (x) { return x.type === 'alerte'; }).length;
+        return el('div', { class: 'bandeau', role: 'alert', style: 'border-color:var(--alerte)' }, [
+          el('b', {}, ['⚠ ' + (alertes ? 'Alerte stock bas non envoyée' : 'Souci côté serveur Filtration')]),
+          el('ul', { class: 'petit', style: 'margin:6px 0;padding-left:18px' }, liste.slice(0, 3).map(function (x) {
+            return el('li', {}, [dateCourte(x.quand) + ' — ' + x.message]);
+          }).concat(liste.length > 3 ? [el('li', {}, ['… et ' + (liste.length - 3) + ' autre(s)'])] : [])),
+          el('button', { class: 'btn-second st-mini', type: 'button', onclick: function () {
+            var jusqua = liste[0].quand;
+            PM.Prefs.set(cleSoucisVu(), String(jusqua));   // masqué tout de suite sur ce téléphone
+            afficher();
+            if (modeDemo) return;
+            api('filtration.soucisEffacer', { jusqua: jusqua }).then(function (j) {
+              if (T) { T.soucis = j.soucis || []; PM.DB.set(K.tout, T); }
+            })['catch'](function (e) {
+              PM.toast('Message masqué sur ce téléphone seulement (le serveur n’a pas pu l’effacer : ' + e.message + ').', 5000);
+            });
+          } }, ['J’ai vu'])]);
       }
       function aller(e, opts) {
         var sortieInventaire = ecran === 'inventaire' && e !== 'inventaire';
@@ -719,9 +757,15 @@
         var bas = Object.keys(D.refs).map(function (k) { return D.refs[k]; }).filter(function (r) { return r.bas; })
           .sort(function (a, b) { return b.aCommander - a.aCommander || a.ref.localeCompare(b.ref); });
         var inconnus = Object.keys(D.refs).filter(function (k) { return D.refs[k].stock === null; }).length;
-        racine.appendChild(el('div', { class: 'bandeau' }, [
+        // le texte ne promet pas un mail si le dernier envoi a échoué (état renvoyé par le serveur)
+        var al = T.alerte, rate = !!(al && al.ok === false);
+        var txtMail = rate
+          ? '⚠ Le dernier mail d’alerte (' + dateCourte(al.quand) + ') n’est pas parti' + (al.envoye ? ' (le WhatsApp, lui, est parti)' : '') + (al.message ? ' : ' + al.message : '')
+            + '. Vérifie l’adresse EmailAlerte dans l’onglet « Parametres » de la feuille ; nouvel essai au prochain mouvement de ces références.'
+          : 'Un mail part tout seul vers ' + (T.email || 'l’adresse d’alerte') + ' quand une référence passe sous son seuil (après un inventaire : un seul mail récapitulatif, quelques minutes plus tard).';
+        racine.appendChild(el('div', { class: 'bandeau', style: rate ? 'border-color:var(--alerte)' : '' }, [
           el('div', { style: 'font-weight:700' }, ['🛒 Filtres au seuil mini ou en dessous (' + bas.length + ')']),
-          el('p', { class: 'petit' }, ['Un mail part tout seul vers ' + (T.email || 'l’adresse d’alerte') + ' quand une référence passe sous son seuil.'
+          el('p', { class: 'petit', style: rate ? 'color:var(--alerte)' : '' }, [txtMail
             + (inconnus ? ' ' + inconnus + ' référence' + (inconnus > 1 ? 's n’ont' : ' n’a') + ' pas encore de stock : fais l’inventaire.' : '')])]));
         if (!bas.length) { racine.appendChild(el('div', { class: 'vide-msg' }, ['Rien à commander 👍'])); return; }
         racine.appendChild(el('div', { class: 'st-actions' }, [el('button', { class: 'btn-second st-mini', type: 'button', onclick: function () {
@@ -752,7 +796,7 @@
             delete j.ok; PM.DB.set(k, j);
             if (histoAnnee === annee) { histo = j; if (actif() && (ecran === 'historique' || ecran === 'noncomptees') && !document.querySelector('.ag-modale')) afficher(); }
           })['catch'](function (e) {
-            if (!histo) { histo = { annee: annee, lignes: [], annees: [annee], erreur: (PM.raison ? PM.raison(e) : 'Hors ligne') + ' : ' + e.message }; if ((ecran === 'historique' || ecran === 'noncomptees')) afficher(); }
+            if (!histo) { histo = { annee: annee, lignes: [], annees: [annee], erreur: (PM.raison ? PM.raison(e) : 'Hors ligne') + ' : ' + e.message + ' ' + conseil(e) }; if ((ecran === 'historique' || ecran === 'noncomptees')) afficher(); }
             else PM.toast((PM.raison ? PM.raison(e) : 'Hors ligne') + ' : historique du dernier chargement', 4000);
           });
         }).then(function () { delete histoEnCours[annee]; }, function () { delete histoEnCours[annee]; }));

@@ -34,6 +34,15 @@
   function dateLigne(l) { return l.Date_Analyse || l.Date_Traitement || ''; }
   function nomPoint(l) { return l.Point_Mesure || 'Général'; }
   function svgEl(tag, attrs) { var e = document.createElementNS(NS, tag); for (var k in attrs) if (attrs[k] !== null && attrs[k] !== undefined) e.setAttribute(k, attrs[k]); return e; }
+  // Lien PDF : seulement http(s) (jamais « javascript: » venu d'une cellule du Sheet)
+  function lienSur(u) { return /^https?:\/\//i.test(String(u || '').trim()) ? String(u).trim() : null; }
+  // Date d'analyse : « 2026-09-15… » gardée ; « 15/09/2026 » (ou 15.09.2026, 15-09-2026) convertie ; sinon ''
+  function dateIso(v) {
+    var t = String(v || '').trim(), m = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/.exec(t);
+    if (m) t = m[3] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[1]).slice(-2);
+    t = t.slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(t) && !isNaN(new Date(t)) ? t : '';
+  }
   function couleur(p) { return COULEUR_POINT[p] ? 'var(' + COULEUR_POINT[p] + ')' : 'var(--texte-2)'; }
 
   /* Les rapports Novatech arrivent en plusieurs PDF (AOV/TAC, MS, renvois…) et chaque PDF
@@ -41,9 +50,10 @@
      une seule mesure par cuve et par jour, avec toutes ses valeurs (pH, AOV, TAC, ratio, MS). */
   function consolider(lignes) {
     var parCle = {}, ordre = [];
+    illisibles = 0;
     lignes.forEach(function (l) {
-      var d = String(l.Date_Analyse || '').slice(0, 10);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return; // ligne sans date d'analyse : inexploitable
+      var d = dateIso(l.Date_Analyse);
+      if (!d) { illisibles++; return; } // ligne sans date d'analyse lisible : inexploitable (comptée et signalée)
       var p = nomPoint(l), k = p + '::' + d;
       if (!parCle[k]) { parCle[k] = { Point_Mesure: p, Date_Analyse: d, ID_PDF: 'jour::' + d, Liens: [], _comAov: '', _com: '' }; ordre.push(k); }
       var m = parCle[k];
@@ -60,6 +70,7 @@
     res.sort(function (a, b) { return a.Date_Analyse < b.Date_Analyse ? -1 : a.Date_Analyse > b.Date_Analyse ? 1 : 0; });
     return res;
   }
+  var illisibles = 0; // lignes écartées au dernier regroupement (date d'analyse vide ou illisible)
   // Une cuve qui n'a plus d'analyse depuis 4 mois de plus que la plus récente du site
   // (ex. Stockage, ou Préfosse qui n'est plus prélevée) est masquée par défaut.
   var JOURS_INACTIF = 120;
@@ -140,6 +151,8 @@
             pa.anciens.map(function (x) { return x.point + ' (dernière le ' + fmtDate(x.derniere) + ')'; }).join(', ')]));
         }
         racine.appendChild(el('p', { class: 'petit an-etat' }, [toutes.length + ' analyse(s) par cuve et par date' + (D.majLe ? ' · mis à jour le ' + new Date(D.majLe).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '')]));
+        if (illisibles) racine.appendChild(el('p', { class: 'bg-erreur' }, ['⚠ ' + illisibles + (illisibles > 1 ? ' analyses avec une date illisible' : ' analyse avec une date illisible')
+          + ' (voir la colonne Date_Analyse de l’onglet Resultats dans le Sheet) : elles ne sont pas affichées.']));
 
         var donnees = toutes.filter(function (l) { return filtre === 'Tous' || nomPoint(l) === filtre; });
         if (!donnees.length) {
@@ -238,7 +251,10 @@
           tous.forEach(function (q) { var d = Math.abs(X(q.t) - px); if (d < best) { best = d; proche = q; } });
           var memeDate = tous.filter(function (q) { return q.date === proche.date; });
           cross.setAttribute('x1', X(proche.t)); cross.setAttribute('x2', X(proche.t)); cross.style.opacity = 1;
-          tip.innerHTML = fmtDate(proche.date) + memeDate.map(function (q) { return '<br>' + q.p + ' : <b>' + fmt(q.v) + '</b>'; }).join('');
+          // construit avec du texte (le nom du point vient du Sheet : jamais interprété comme du HTML)
+          tip.textContent = '';
+          tip.appendChild(document.createTextNode(fmtDate(proche.date)));
+          memeDate.forEach(function (q) { tip.appendChild(el('br')); tip.appendChild(document.createTextNode(q.p + ' : ')); tip.appendChild(el('b', {}, [fmt(q.v)])); });
           tip.style.left = Math.min(Math.max(X(proche.t) / W * 100, 22), 78) + '%'; tip.style.top = '30%'; tip.style.opacity = 1;
         }
         hit.addEventListener('pointermove', survol); hit.addEventListener('pointerdown', survol);
@@ -275,7 +291,7 @@
           g.forEach(function (l) { parP[nomPoint(l)] = l; });
           var com = g.map(function (l) { return l._comAov; }).filter(Boolean)[0] || g.map(function (l) { return l.Commentaire_IA; }).filter(Boolean)[0] || '';
           var liens = [];
-          g.forEach(function (l) { (l.Liens || (l.Lien_PDF ? [l.Lien_PDF] : [])).forEach(function (u) { if (liens.indexOf(u) < 0) liens.push(u); }); });
+          g.forEach(function (l) { (l.Liens || (l.Lien_PDF ? [l.Lien_PDF] : [])).map(lienSur).forEach(function (u) { if (u && liens.indexOf(u) < 0) liens.push(u); }); });
           tbody.appendChild(el('tr', {}, [el('td', { class: 'date-cell' }, [fmtDate(dateLigne(premiere))])]
             .concat(cols.map(function (p) { return el('td', { class: 'val-cell' }, [parP[p] ? resume(parP[p]) : '—']); }))
             .concat([el('td', { class: 'an-com' }, [com ? el('div', { class: 'an-com-txt', title: 'Toucher pour tout lire', onclick: function () { this.classList.toggle('ouvert'); } }, [com]) : '']),

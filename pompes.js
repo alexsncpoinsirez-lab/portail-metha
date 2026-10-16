@@ -55,6 +55,8 @@
     var p = String(d).split('-');
     return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : String(d);
   }
+  // texte placé dans le graphique (construit en SVG texte) : caractères spéciaux neutralisés
+  function esc(t) { return String(t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function aujourdhui() {
     return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   }
@@ -303,9 +305,9 @@
         });
         items.forEach(function (it, i) {
           var x = xc(i), y = yp(it.value);
-          s += '<rect x="' + (x - larg / 2) + '" y="' + y + '" width="' + larg + '" height="' + Math.max(0, H - pb - y) + '" rx="3" style="fill:' + couleur + '"><title>' + it.label + ' : ' + it.value.toLocaleString('fr-FR') + ' ' + unite + '</title></rect>';
+          s += '<rect x="' + (x - larg / 2) + '" y="' + y + '" width="' + larg + '" height="' + Math.max(0, H - pb - y) + '" rx="3" style="fill:' + couleur + '"><title>' + esc(it.label) + ' : ' + it.value.toLocaleString('fr-FR') + ' ' + unite + '</title></rect>';
           s += '<text x="' + x + '" y="' + (y - 4) + '" font-size="10" text-anchor="middle" style="fill:var(--texte)">' + Math.round(it.value).toLocaleString('fr-FR') + '</text>';
-          s += '<text x="' + x + '" y="' + (H - 10) + '" font-size="10" text-anchor="middle" style="fill:var(--texte-2)">' + it.label + '</text>';
+          s += '<text x="' + x + '" y="' + (H - 10) + '" font-size="10" text-anchor="middle" style="fill:var(--texte-2)">' + esc(it.label) + '</text>';
         });
         return el('div', { class: 'pp-graph', html: s + '</svg>' });
       }

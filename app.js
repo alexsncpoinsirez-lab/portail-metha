@@ -200,8 +200,12 @@
         })['catch'](function (e) {
           if (timer) clearTimeout(timer);
           if (e && e.name === 'AbortError') throw erreur('delai', 'Le serveur n’a pas répondu en ' + Math.round(delai / 1000) + ' s.');
-          throw erreur('reseau', navigator.onLine === false ? 'Pas de réseau : le téléphone est hors connexion.'
-            : 'Connexion coupée pendant l’échange (réseau faible, écran éteint ou appli quittée ?).');
+          if (navigator.onLine === false) throw erreur('reseau', 'Pas de réseau : le téléphone est hors connexion.');
+          // Refus immédiat alors que le téléphone a du réseau : très souvent un déploiement Apps Script mal réglé
+          // (Google renvoie une page de connexion que le navigateur bloque), plus rarement un réseau très faible.
+          if (Date.now() - t0 < 4000) throw erreur('reseau', 'Le serveur refuse la connexion. Si ça se répète avec du bon réseau : '
+            + 'dans Apps Script, Déployer → Gérer les déploiements → ✏️ → « Exécuter en tant que : Moi », « Accès : Tout le monde », Nouvelle version.');
+          throw erreur('reseau', 'Connexion coupée pendant l’échange (réseau faible, écran éteint ou appli quittée ?).');
         }).then(function (r) {
           if (timer) clearTimeout(timer);
           if (!r.ok) throw erreur(r.status === 429 || r.status >= 500 ? 'occupe' : 'page', 'Serveur : code ' + r.status);
@@ -644,13 +648,15 @@
         corps.appendChild(el('p', { class: 'petit', style: 'margin-top:10px;font-weight:700' }, ['Saisies refusées par le serveur (' + refusees.length + ')']));
         refusees.forEach(function (x) {
           var s = site(x.siteId), p = x.payload || {};
-          var NOMS = { reponse: 'Ronde', finRonde: 'Fin de ronde', message: 'Message', nh3: 'Suivi NH3', bougies: 'Suivi Bougies', agitation: 'Hauteur agitation', pompes: 'Suivi des pompes' };
+          var NOMS = { reponse: 'Ronde', finRonde: 'Fin de ronde', message: 'Message', nh3: 'Suivi NH3', bougies: 'Suivi Bougies', agitation: 'Hauteur agitation', pompes: 'Suivi des pompes',
+            stock: 'Stock pièces', filtration: 'Filtration', taches: 'Tâches', statut: 'Tâches (colonne)', operateur: 'Tâches (opérateur)', site: 'Tâches (équipe)', photo: 'Photo' };
           var t = String(p.type || '?');
           var quoi = (NOMS[t] || NOMS[t.split('.')[0]] || t) + (t.indexOf('.') > 0 ? ' (' + t.split('.')[1] + ')' : '') + (p.libelle ? ' · ' + p.libelle : '') + (p.zone ? ' — ' + p.zone : '');
           corps.appendChild(el('div', { class: 'champ', style: 'border-left:3px solid #e8a33d;padding-left:8px;margin:8px 0' }, [
             el('div', { class: 'petit' }, [(s ? s.nom : x.siteId) + ' — ' + new Date(x.cree).toLocaleString('fr-FR')]),
             el('div', {}, [quoi]),
             el('div', { class: 'petit', style: 'color:#e8a33d' }, ['Motif : ' + (x.erreur || 'inconnu')]),
+            el('div', { class: 'petit' }, ['« Renvoyer » la réessaie (sans risque de double comptage). « Supprimer » l’efface de ce téléphone : à refaire à la main si besoin.']),
             el('div', { style: 'display:flex;gap:8px;margin-top:6px' }, [
               el('button', { class: 'btn-second', onclick: function () { Envoi.renvoyer(x).then(remplir); } }, ['Renvoyer']),
               el('button', { class: 'btn-second', onclick: function () {
@@ -667,7 +673,7 @@
 
   /* Bloc « Journal réseau » : ce qui s'est passé avec chaque serveur (heure, outil, durée, résultat) */
   function blocJournal() {
-    var LIB = { ok: '✓', reseau: '📵 Pas de réseau', delai: '⏳ Trop lent', occupe: '⏸ Occupé', page: '⚠ Page Google', serveur: '✗ Erreur serveur' };
+    var LIB = { ok: '✓', reseau: '📵 Réseau', delai: '⏳ Trop lent', occupe: '⏸ Occupé', page: '⚠ Page Google', serveur: '✗ Erreur' };
     var bloc = el('div', { class: 'bandeau' }, [el('div', { style: 'font-weight:700;margin-bottom:6px' }, ['Journal réseau']),
       el('p', { class: 'petit' }, ['Les 40 derniers échanges avec les serveurs. En cas de souci, fais une capture de cette liste.'])]);
     var liste = el('div', { class: 'journal' });
@@ -692,9 +698,44 @@
     return bloc;
   }
 
+  /* Bloc « Problèmes signalés par les serveurs » : étapes non terminées, alertes WhatsApp / mail non parties…
+     (action « soucis » des serveurs ; un serveur qui ne la connaît pas encore est simplement ignoré) */
+  function blocSoucis() {
+    var bloc = el('div', { class: 'bandeau', id: 'blocSoucis' }, [el('div', { style: 'font-weight:700;margin-bottom:6px' }, ['Problèmes signalés par les serveurs'])]);
+    var corps = el('div', {}, [el('p', { class: 'petit' }, ['Vérification…'])]);
+    bloc.appendChild(corps);
+    var sites = CFG.sites.filter(function (s) { return apiSite(s.id) && cleSite(s.id); });
+    if (!sites.length) { corps.innerHTML = ''; corps.appendChild(el('p', { class: 'petit' }, ['Aucun serveur réglé sur ce téléphone.'])); return bloc; }
+    if (navigator.onLine === false) { corps.innerHTML = ''; corps.appendChild(el('p', { class: 'petit' }, ['Hors connexion : vérification impossible pour l’instant.'])); return bloc; }
+    Promise.all(sites.map(function (s) {
+      return Api.appeler(apiSite(s.id), { action: 'soucis', cle: cleSite(s.id) }, 20000)
+        .then(function (j) { return { s: s, l: j.soucis || [] }; }, function () { return { s: s, l: null }; });
+    })).then(function (res) {
+      corps.innerHTML = '';
+      var rien = true;
+      res.forEach(function (r) {
+        if (!r.l || !r.l.length) return;
+        rien = false;
+        corps.appendChild(el('p', { class: 'petit', style: 'font-weight:700;margin-top:8px' }, [r.s.nom]));
+        r.l.slice(0, 10).forEach(function (x) {
+          var q = x && x.quand ? new Date(x.quand) : null;
+          corps.appendChild(el('p', { class: 'petit', style: 'color:#e8a33d' }, ['⚠ ' + (q && !isNaN(q) ? q.toLocaleString('fr-FR') + ' — ' : '') + (x && x.message || String(x))]));
+        });
+        corps.appendChild(el('button', { class: 'btn-second', type: 'button', onclick: function () {
+          Api.appeler(apiSite(r.s.id), { action: 'soucisEffacer', cle: cleSite(r.s.id) }, 20000)
+            .then(function () { toast('Liste effacée'); router(); }, function (e) { toast('Impossible d’effacer : ' + e.message, 5000); });
+        } }, ['J’ai vu, effacer']));
+      });
+      if (rien) corps.appendChild(el('p', { class: 'petit' }, ['✓ Aucun problème signalé.']));
+      else corps.insertBefore(el('p', { class: 'petit' }, ['Les saisies concernées sont bien enregistrées ; seule une étape secondaire (copie, historique, alerte…) n’a pas pu se faire. Si une alerte n’est pas partie, préviens la personne concernée.']), corps.firstChild);
+    });
+    return bloc;
+  }
+
   function ecranReglages(vue) {
     entete('Réglages', 'Connexion aux serveurs Apps Script', '#');
     vue.appendChild(blocEnvois());
+    vue.appendChild(blocSoucis());
     vue.appendChild(blocJournal());
     vue.appendChild(el('p', { class: 'petit' }, [
       'Chaque site a son propre serveur. Colle son adresse (se termine par /exec) et sa clé : tous les outils « version rapide » du site s’en servent.'
@@ -849,7 +890,7 @@
   window.addEventListener('hashchange', router);
   $('#btnReglages').addEventListener('click', function () { location.hash = 'reglages'; });
 
-  var VERSION_APP = '1.10.0';
+  var VERSION_APP = '1.11.0';
 
   /* ---------- Exposé aux modules ---------- */
   window.PM = { attente: Attente.suivre, raison: raison, Journal: Journal, apiSite: apiSite, cleSite: cleSite, el: el, $: $, toast: toast, Prefs: Prefs, DB: DB, Api: Api, Envoi: Envoi, uid: uid, icone: icone, nombre: nombre };
@@ -864,6 +905,35 @@
       if (!ok) toast('⚠ Stockage indisponible sur ce téléphone : les saisies non envoyées seront perdues à la fermeture.', 6000);
     });
   });
+  function bandeauMiseAJour() {
+    if (document.getElementById('pmMaj')) return;
+    var b = el('button', { id: 'pmMaj', class: 'pm-maj', type: 'button', onclick: function () {
+      b.textContent = 'Mise à jour…';
+      // les saisies en attente sont gardées sur le téléphone : rien n'est perdu
+      location.reload();
+    } }, ['🔄 Nouvelle version de l’appli — toucher pour mettre à jour']);
+    document.body.appendChild(b);
+  }
+
+  /* ---------- Plantage dans l'appli : on prévient au lieu de rester bloqué sans rien dire ---------- */
+  var dernierPlantage = 0;
+  function signalerPlantage(msg, ou) {
+    msg = String(msg || 'erreur inconnue');
+    if (/ResizeObserver|Script error\.?$|extension:\/\//i.test(msg + ' ' + (ou || ''))) return; // bruits sans conséquence
+    Journal.noter({ t: Date.now(), a: 'plantage appli', s: '', d: 0, r: 'serveur', m: (msg + (ou ? ' (' + ou + ')' : '')).slice(0, 200), n: 0 });
+    if (Date.now() - dernierPlantage < 15000) return;
+    dernierPlantage = Date.now();
+    toast('⚠ Un écran a rencontré un problème. Les saisies déjà faites sont gardées. Reviens à l’accueil et réessaie ; si ça recommence, fais une capture de Réglages → Journal réseau.', 8000);
+  }
+  window.addEventListener('error', function (e) {
+    signalerPlantage(e && (e.message || (e.error && e.error.message)), e && e.filename ? String(e.filename).split('/').pop() + ':' + e.lineno : '');
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason;
+    if (r && r.type) return; // erreurs réseau/serveur déjà expliquées par l'écran concerné
+    signalerPlantage(r && r.message || r, '');
+  });
+
   // Chrome propose l'installation : on garde l'invitation pour le bouton « Installer l'appli » (Réglages)
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__invitInstall = e; });
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
@@ -872,12 +942,11 @@
         // vérifie s'il y a une nouvelle version à chaque retour sur l'appli
         document.addEventListener('visibilitychange', function () { if (!document.hidden) reg.update()['catch'](function () {}); });
       })['catch'](function () {});
-      // nouvelle version installée -> on recharge une fois pour l'afficher tout de suite
-      var avaitControleur = !!navigator.serviceWorker.controller, recharge = false;
+      // nouvelle version installée -> bandeau « toucher pour mettre à jour » (plus de rechargement en pleine saisie)
+      var avaitControleur = !!navigator.serviceWorker.controller;
       navigator.serviceWorker.addEventListener('controllerchange', function () {
-        if (!avaitControleur || recharge) return;
-        recharge = true;
-        location.reload();
+        if (!avaitControleur) return;
+        bandeauMiseAJour();
       });
     });
   }

@@ -78,6 +78,8 @@
       lecteur.readAsDataURL(fichier);
     });
   }
+  // Lien vers une photo : seulement http(s) (jamais « javascript: » venu d'une cellule du Sheet)
+  function lienSur(u) { return /^https?:\/\//i.test(String(u || '').trim()) ? String(u).trim() : null; }
   function visionneuse(src) {
     var v = el('div', { class: 'visionneuse', onclick: function () { v.remove(); } }, [el('img', { src: src, alt: '' })]);
     document.body.appendChild(v);
@@ -297,8 +299,10 @@
         var fin = new Date().toISOString();
         var nb = 0, alertes = 0;
         config.points.forEach(function (p, i) { var x = rep(i); if (x && x.reponse) { nb++; if (p.reponsesAlerte.indexOf(x.reponse) >= 0) alertes++; } });
-        if (!modeDemo && R.debut) PM.Envoi.ajouter(ctx.site.id, { type: 'finRonde', agent: R.agent || '', debut: R.debut, fin: fin });
-        recapFin = { nb: nb, alertes: alertes, duree: R.debut ? Math.max(0, Math.round((new Date(fin) - new Date(R.debut)) / 60000)) : null };
+        var idFin = null;
+        if (!modeDemo && R.debut) { idFin = PM.uid(); PM.Envoi.ajouter(ctx.site.id, { id: idFin, type: 'finRonde', agent: R.agent || '', debut: R.debut, fin: fin }); }
+        recapFin = { nb: nb, alertes: alertes, duree: R.debut ? Math.max(0, Math.round((new Date(fin) - new Date(R.debut)) / 60000)) : null,
+          idFin: idFin, debut: R.debut };
         direMerci(R.agent);
         R = null; PM.DB.del(CLE_BROUILLON);
         enFin = true;
@@ -307,16 +311,31 @@
 
       function ecranFin() {
         var statut = el('div', { class: 'petit' });
+        var resultat = el('div', { style: 'margin-top:8px' });
+        var demande = false;
         function maj(n) {
           statut.textContent = modeDemo ? 'Mode démo : rien n’a été envoyé.'
             : (n ? (navigator.onLine ? 'Envoi en cours… (' + n + ' restant)' : 'Pas de réseau : envoi automatique dès le retour du réseau (' + n + ' en attente).')
-                 : 'Tout est enregistré dans la feuille Google ✓' + (recapFin.alertes ? ' — alertes WhatsApp regroupées envoyées si le seuil est atteint.' : ''));
+                 : 'Tout est enregistré dans la feuille Google ✓' + (recapFin.alertes && !recapFin.idFin ? ' — alertes WhatsApp regroupées envoyées si le seuil est atteint.' : ''));
+          // tout est parti : on demande au serveur si les alertes WhatsApp sont parties et s'il y a eu un souci (photo…)
+          if (!n && !modeDemo && recapFin.idFin && !demande) { demande = true; resultatServeur(); }
+        }
+        function resultatServeur() {
+          PM.Api.appeler(ctx.apiUrl, { action: 'rondeResultat', cle: ctx.cle, idFin: recapFin.idFin, depuis: recapFin.debut }, 30000).then(function (j) {
+            resultat.innerHTML = '';
+            var lignes = [];
+            if (j.connu && j.alertesEnvoyees) lignes.push(['petit', '📣 ' + j.alertesEnvoyees + ' alerte(s) WhatsApp envoyée(s) au groupe.']);
+            if (j.connu && j.alertesEnAttente) lignes.push(['bg-erreur', '⚠ Alerte WhatsApp non envoyée (' + j.alertesEnAttente + ' point(s) en anomalie répétée) : nouvel essai à la fin de la prochaine ronde.']);
+            (j.soucis || []).slice(0, 5).forEach(function (s) { lignes.push(['bg-erreur', '⚠ ' + s.message]); });
+            if (j.connu && !lignes.length && recapFin.alertes) lignes.push(['petit', 'Aucune alerte WhatsApp à envoyer (seuil de répétition non atteint).']);
+            lignes.forEach(function (l) { resultat.appendChild(el('div', { class: l[0] }, [l[1]])); });
+          })['catch'](function () { /* ancien serveur ou pas de réseau : on garde le message général */ });
         }
         PM.Envoi.surChangement(maj); PM.Envoi.compter().then(maj);
         vue.appendChild(el('div', { class: 'bandeau', style: 'text-align:center;padding:28px 16px' }, [
           el('div', { style: 'font-size:22px;font-weight:800' }, ['✅ Ronde terminée']),
           el('p', {}, [recapFin.nb + ' point(s) renseigné(s), ' + (recapFin.alertes ? recapFin.alertes + ' réponse(s) en anomalie' : 'aucune alerte') + (recapFin.duree !== null ? ' · Durée : ' + recapFin.duree + ' min' : '') + '.']),
-          statut, el('div', { style: 'height:12px' }),
+          statut, resultat, el('div', { style: 'height:12px' }),
           el('button', { class: 'btn-principal', onclick: function () { enFin = false; R = null; demarrer(); if (!modeDemo) rafraichir(false); } }, ['Démarrer une nouvelle ronde'])
         ]));
       }
@@ -338,7 +357,7 @@
           })) : el('p', { class: 'petit' }, ['Aucune alerte récurrente sur les 30 derniers jours.']));
           zone.appendChild(el('h3', { class: 'ronde-h3' }, ['Dernières alertes']));
           zone.appendChild(s.dernieresAlertes.length ? el('div', {}, s.dernieresAlertes.map(function (a) {
-            var photos = String(a.photoUrl || '').split('\n').filter(Boolean);
+            var photos = String(a.photoUrl || '').split('\n').map(lienSur).filter(Boolean);
             return el('div', { class: 'bandeau ronde-anomalie' }, [
               el('b', {}, [a.zone + ' — ' + a.libelle]),
               el('div', { class: 'petit' }, [a.horodatage + ' · ' + a.agent + ' · réponse : ' + a.reponse]),
@@ -379,7 +398,8 @@
                 el('div', {}, [el('span', { class: 'ronde-type' }, [m.type]), ' ', el('b', {}, [m.agent]), el('span', { class: 'petit' }, [' · ' + m.horodatage]), el('div', {}, [m.texte])]),
                 m.statut === 'Nouveau'
                   ? el('button', { class: 'btn-second', onclick: function () {
-                      PM.Api.appeler(ctx.apiUrl, { action: 'messageTraite', cle: ctx.cle, ligne: m.ligne }).then(chargerListe)['catch'](function (e) { PM.toast(e.message); });
+                      // texte + heure envoyés : le serveur vérifie que c'est bien ce message avant d'écrire
+                      PM.Api.appeler(ctx.apiUrl, { action: 'messageTraite', cle: ctx.cle, ligne: m.ligne, t: m.t, texte: m.texte }).then(chargerListe)['catch'](function (e) { PM.toast(e.message, 5000); chargerListe(); });
                     } }, ['Marquer traité'])
                   : el('span', { class: 'petit' }, ['Traité'])
               ]));

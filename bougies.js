@@ -450,6 +450,12 @@
         appelDirect({ action: 'bougies.test', quoi: quoi }, bouton).then(function () { PM.toast('Message de test envoyé.'); })['catch'](function (e) { montrer(zone, e.message); });
       }
 
+      // identifiant de CE téléphone : les codes faux ne bloquent que lui (pas les collègues)
+      function idAppareil() {
+        var a = PM.Prefs.get('id_appareil', '');
+        if (!a) { a = PM.uid(); PM.Prefs.set('id_appareil', a); }
+        return a;
+      }
       function blocConfigApi(P) {
         var bloc = el('section', { class: 'bandeau bg-form' }, [el('h2', {}, ['Configuration API (protégée)'])]);
         var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
@@ -458,7 +464,7 @@
           var btn = el('button', { class: 'btn-second', type: 'button' }, ['Déverrouiller']);
           btn.addEventListener('click', function () {
             msg.hidden = true;
-            appelDirect({ action: 'bougies.configApi', code: code.value.trim() }, btn).then(function (j) {
+            appelDirect({ action: 'bougies.configApi', code: code.value.trim(), appareil: idAppareil() }, btn).then(function (j) {
               codeApiValide = code.value.trim();
               bloc.replaceWith(blocApiOuvert(j.config));
             })['catch'](function (e) { montrer(msg, e.message); });
@@ -480,13 +486,14 @@
         var btnTest = el('button', { class: 'btn-second', type: 'button' }, ['Envoyer un test WhatsApp']);
         btnEnr.addEventListener('click', function () {
           msg.hidden = true;
-          appelDirect({ action: 'bougies.enregistrerConfigApi', code: codeApiValide, destinataire: tel.value.trim(), apiKey: key.value.trim() }, btnEnr)
+          appelDirect({ action: 'bougies.enregistrerConfigApi', code: codeApiValide, destinataire: tel.value.trim(), apiKey: key.value.trim(), appareil: idAppareil() }, btnEnr)
             .then(function () { D.parametres.apiConfiguree = !!(tel.value.trim() && (key.value.trim() || cfg.apiKeyConfiguree)); if (key.value.trim()) { cfg.apiKeyConfiguree = true; cfg.apiKeyFin = key.value.trim().slice(-4); key.value = ''; key.placeholder = 'Clé enregistrée (…' + cfg.apiKeyFin + ') — laisser vide pour la garder'; } PM.DB.set(CLE_DONNEES, D); PM.toast('Configuration API enregistrée.'); })
             ['catch'](function (e) { montrer(msg, e.message); });
         });
         btnTest.addEventListener('click', function () { tester('whatsapp', btnTest, msg); });
         return el('section', { class: 'bandeau bg-form' }, [
           el('h2', {}, ['Alerte WhatsApp (TextMeBot)']),
+          cfg.avertissement ? el('p', { class: 'bg-erreur' }, ['⚠ ' + cfg.avertissement]) : null,
           el('div', { class: 'champ' }, [el('label', { for: 'p-tel' }, ['Destinataire (numéro international ex : +33612345678, ou ID de groupe se terminant par @g.us)']), tel]),
           el('div', { class: 'champ' }, [el('label', { for: 'p-apikey' }, ['Clé API TextMeBot']), key]),
           msg,

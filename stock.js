@@ -23,6 +23,17 @@
 
   /* ---------- outils ---------- */
   function cle(p) { return String(p.reference || '').trim() || String(p.designation || '').trim(); }
+  // Clé de partage (même règle que le serveur, stCleCommune_) : NON = jamais partagée ; OUI sans référence = désignation.
+  // Données d'un ancien serveur (pas de champ « commun ») : la référence, comme avant.
+  function cleCommune(p) {
+    if (p.commun === false) return '';
+    if (p.commun === true) return String(p.reference || '').trim() || String(p.designation || '').trim();
+    return String(p.reference || '').trim();
+  }
+  // Commandes : référence « 00123 » = 123 (Sheets a pu la transformer en nombre) ; sans référence : matériel + désignation
+  function refNorm(r) { r = String(r === null || r === undefined ? '' : r).trim(); return /^\d+$/.test(r) ? (r.replace(/^0+/, '') || '0') : r; }
+  function cleCmd(x) { return x.materiel + '|' + (String(x.reference || '').trim() ? 'r:' + refNorm(x.reference) : 'd:' + String(x.designation || '').trim()); }
+  var TYPES_CMD = ['stock.panier', 'stock.retirerPanier', 'stock.commande', 'stock.reception'];
   function norm(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); }
   function lienSur(u) { u = String(u || '').trim(); return /^https?:\/\//i.test(u) ? u : ''; }
   // les liens « uc?export=view » de Drive s'affichent mal : on passe par la miniature Drive
@@ -158,10 +169,11 @@
       var cible = m.pieces.filter(function (p) { return a.rowIndex && p.rowIndex === a.rowIndex && cle(p) === cle(a); })[0]
         || m.pieces.filter(function (p) { return cle(p) === cle(a); })[0];
       if (!cible) return;
-      var memeRef = [cible];
-      if (a.reference) {
+      // quantité / seuil : toutes les lignes qui partagent le stock (même règle que le serveur ; une pièce NON ne touche qu'elle-même)
+      var memeRef = [cible], kc = cleCommune(cible);
+      if (kc) {
         memeRef = [];
-        mats.forEach(function (mm) { mm.pieces.forEach(function (p) { if (p.reference === a.reference) memeRef.push(p); }); });
+        mats.forEach(function (mm) { mm.pieces.forEach(function (p) { if (p === cible || cleCommune(p) === kc) memeRef.push(p); }); });
       }
       if (a.type === 'stock.quantite') memeRef.forEach(function (p) { p.quantiteStock = a.absolu ? Math.max(0, a.compte) : Math.max(0, p.quantiteStock + a.delta); });
       else if (a.type === 'stock.reception') memeRef.forEach(function (p) { p.quantiteStock += a.quantite; });
@@ -174,7 +186,7 @@
       cible.enAttente = true;
     });
     mats.forEach(function (m) {
-      m.pieces.forEach(function (p) { p.materiel = m.nom; p.quantiteACommander = Math.max((p.seuil || 0) - p.quantiteStock, 0); p.stockBas = p.quantiteStock <= (p.seuil || 0); });
+      m.pieces.forEach(function (p) { p.materiel = m.nom; p.quantiteACommander = Math.max((p.seuil || 0) - p.quantiteStock, 0); p.stockBas = (p.seuil || 0) > 0 && p.quantiteStock <= p.seuil; }); // seuil 0 = pas de seuil
       m.nbAlertes = m.pieces.filter(function (p) { return p.stockBas; }).length;
     });
     return mats;
@@ -207,6 +219,10 @@
       var S = ctx.site.id, K = cles(S);
       var T = null;            // stock du site (serveur)
       var attente = [];        // modifications pas encore confirmées par le serveur
+      // Panier / commandes : lignes de l'onglet Commandes lues sur le serveur (cmdLu = heure où la lecture est PARTIE).
+      // Une saisie confirmée APRÈS ce moment reste appliquée par-dessus (cmdConfirmes) : une lecture un peu
+      // ancienne ne peut plus faire disparaître une pièce qu'on vient d'ajouter au panier.
+      var cmdServeur = null, cmdLu = 0, cmdConfirmes = [];
       var ecran = 'materiels', materiel = null, filtre = '', recherche = '';
       var casierChoisi = null, invPortee = null, invFaits = {}, photoMode = 'avec', photoFiltre = '';
       var params = ctx.params || [];
@@ -226,6 +242,7 @@
       Promise.all([PM.DB.get(K.tout), PM.DB.get(K.attente)]).then(function (r) {
         T = r[0] || (modeDemo ? demo() : null);
         attente = r[1] || [];
+        if (T && Array.isArray(T.commandes)) cmdServeur = T.commandes;
         if (params[0]) { ecran = 'pieces'; materiel = params[0]; }
         if (T) { afficher(); ouvrirLien(); }
         if (!modeDemo) charger(!T);
@@ -249,6 +266,7 @@
       }
       function charger(premier) {
         dernierChargement = Date.now();
+        var depart = Date.now();
         return api('stock.tout', {}, 90000).then(function (j) {
           delete j.ok;
           // Sécurité : un matériel que le serveur n'a pas pu relire (ou une réponse vide) ne doit
@@ -262,6 +280,7 @@
           });
           if (garde) PM.toast('Une partie du stock n’a pas pu être relue : dernière version gardée.', 4000);
           T = j; PM.DB.set(K.tout, j);
+          if (Array.isArray(j.commandes)) { cmdServeur = j.commandes; cmdLu = depart; PM.DB.set('stock_commander_' + S, cmdServeur); }
           return nettoyerAttente().then(function () {
             if (actif() && !document.querySelector('.ag-modale')) afficher();
             ouvrirLien();
@@ -290,10 +309,23 @@
         if (!actif() || n || !attente.length || modeDemo) return;
         rechargerPlusTard();
       });
+      // Retire de « attente » les saisies que la file a VRAIMENT envoyées (ou que le serveur a refusées).
+      // Avant : une saisie toute neuve, pas encore arrivée dans la file (ajout en cours), était retirée aussi
+      // -> la pièce disparaissait de l'écran (ex. panier) jusqu'au rechargement suivant.
       function nettoyerAttente() {
         return Promise.all([PM.DB.listerEnvois(), PM.DB.get(K.attente)]).then(function (r) {
-          var ids = (r[0] || []).filter(function (x) { return !x.rejete; }).map(function (x) { return x.payload.id; });
-          attente = (r[1] || []).filter(function (a) { return ids.indexOf(a.id) >= 0; });
+          var ids = (r[0] || []).filter(function (x) { return !x.rejete; }).map(function (x) { return x.payload && x.payload.id; });
+          var liste = (r[1] || []).slice(), vus = {};
+          liste.forEach(function (a) { vus[a.id] = true; });
+          attente.forEach(function (a) { if (!vus[a.id]) liste.push(a); }); // saisies de cet écran pas encore copiées sur le téléphone
+          var maintenant = Date.now(), parties = [];
+          attente = liste.filter(function (a) {
+            if (ids.indexOf(a.id) >= 0) return true;
+            if (!a.enFile && maintenant - (Date.parse(a.horodatage) || 0) < 120000) return true; // ajout dans la file en cours
+            parties.push(a); return false;
+          });
+          parties.forEach(function (a) { if (TYPES_CMD.indexOf(a.type) >= 0) cmdConfirmes.push({ t: maintenant, a: a }); });
+          cmdConfirmes = cmdConfirmes.filter(function (c) { return c.t > cmdLu; });
           return PM.DB.set(K.attente, attente);
         });
       }
@@ -309,10 +341,11 @@
         attente.push(payload);
         if (modeDemo) {
           T = { site: T.site, urlScanner: '', casiers: casiersDefinis(), materiels: mats().map(function (m) { return { nom: m.nom, pieces: m.pieces }; }) };
+          cmdServeur = lignesCmd().map(function (x) { delete x.enAttente; return x; }); // démo : le panier est gardé en mémoire
           attente = [];
         } else {
           PM.DB.set(K.attente, attente);
-          PM.Envoi.ajouter(S, payload, avecPhoto);
+          PM.Envoi.ajouter(S, payload, avecPhoto).then(function () { payload.enFile = true; PM.DB.set(K.attente, attente); }, function () {});
         }
         afficher();
         if (rafraichirFiche) rafraichirFiche();
@@ -328,7 +361,8 @@
           } }, ['Continuer'])]);
         setTimeout(function () { inp.focus(); }, 30);
       }
-      function refPiece(p) { return { materiel: p.materiel, rowIndex: p.rowIndex, reference: p.reference, designation: p.designation }; }
+      // empreinte : rangement + côtes vus ici ; le serveur s'en sert pour départager deux lignes identiques
+      function refPiece(p) { return { materiel: p.materiel, rowIndex: p.rowIndex, reference: p.reference, designation: p.designation, empreinte: { casier: p.casier || '', cotes: p.cotes || '' } }; }
 
       /* ================= écrans ================= */
       function afficher() {
@@ -354,17 +388,18 @@
         function b(txt, titre, fn, actifSi) {
           return el('button', { class: 'st-outil' + (actifSi ? ' actif' : ''), type: 'button', title: titre, 'aria-label': titre, onclick: fn }, [txt]);
         }
-        var nbCmd = toutesPieces().filter(function (p) { return p.stockBas && p.quantiteACommander > 0; }).length;
+        // 🛒 = pièces choisies au panier ; ⚠ = pièces sous le seuil mini (pas encore au panier)
+        var nb = compteurs(), txtCmd = (nb.panier || nb.seuil) ? ' ' + [nb.panier ? '🛒 ' + nb.panier : '', nb.seuil ? '⚠ ' + nb.seuil : ''].filter(Boolean).join(' · ') : '';
         return el('div', { class: 'st-outils' }, [
           b('▦ Matériels', 'Matériels du site', function () { aller('materiels'); }, ecran === 'materiels' || ecran === 'pieces'),
           b('🗄 Rangements', 'Vue par casier', function () { aller('casiers'); }, ecran === 'casiers'),
           b('🖼 Photos', 'Photos des pièces', function () { aller('photos'); }, ecran === 'photos'),
           b('📷 Scan', 'Scanner un QR code', scanner),
-          b('🛒 Commandes' + (nbCmd ? ' (' + nbCmd + ')' : ''), 'À commander / commandé', function () { aller('commander'); }, ecran === 'commander'),
+          b('🛒 Commandes' + txtCmd, 'Panier, pièces sous le seuil, commandes en cours', function () { aller('commander'); }, ecran === 'commander'),
           b('📋 Inventaire', 'Mode inventaire', function () { aller('inventaire'); }, ecran === 'inventaire'),
           b('📜', 'Historique des mouvements', function () { aller('historique'); }, ecran === 'historique'),
           b('🔗', 'Pièces au stock commun', function () { aller('communes'); }, ecran === 'communes'),
-          b('🩺', 'Contrôle des données', function () { aller('controle'); }, ecran === 'controle')
+          b(T && T.nbSoucis ? '🩺 ⚠' : '🩺', T && T.nbSoucis ? 'Contrôle des données : ' + T.nbSoucis + ' étape(s) non terminée(s)' : 'Contrôle des données', function () { aller('controle'); }, ecran === 'controle')
         ]);
       }
 
@@ -933,8 +968,9 @@
           choixSite.addEventListener('change', remplirMat);
           choixMat.addEventListener('change', function () { nouveauMat.hidden = choixMat.value !== '__nouveau'; if (!nouveauMat.hidden) setTimeout(function () { nouveauMat.focus(); }, 30); });
           remplirMat();
-          var mode = p.reference ? 'copier' : 'deplacer';
-          var chipCopier = el('button', { type: 'button', class: 'st-chip' + (mode === 'copier' ? ' actif' : ''), disabled: p.reference ? null : 'disabled', onclick: function () { mode = 'copier'; maj(); } }, ['Copier (commune aux deux)']);
+          var peutCopier = !!cleCommune(p); // NON = jamais commune ; OUI sans référence = commune par la désignation
+          var mode = peutCopier ? 'copier' : 'deplacer';
+          var chipCopier = el('button', { type: 'button', class: 'st-chip' + (mode === 'copier' ? ' actif' : ''), disabled: peutCopier ? null : 'disabled', onclick: function () { mode = 'copier'; maj(); } }, ['Copier (commune aux deux)']);
           var chipDeplacer = el('button', { type: 'button', class: 'st-chip' + (mode === 'deplacer' ? ' actif' : ''), onclick: function () { mode = 'deplacer'; maj(); } }, ['Déplacer (retirée d’ici)']);
           var aide = el('p', { class: 'petit' });
           function maj() {
@@ -949,7 +985,7 @@
           corps.appendChild(el('div', { class: 'champ' }, [el('label', {}, ['Vers le site']), choixSite]));
           corps.appendChild(el('div', { class: 'champ' }, [el('label', {}, ['Dans le matériel']), choixMat, nouveauMat]));
           corps.appendChild(el('div', { class: 'champ' }, [el('label', {}, ['Comment']), el('div', { class: 'st-actions' }, [chipCopier, chipDeplacer]), aide]));
-          if (!p.reference) corps.appendChild(el('p', { class: 'petit' }, ['Sans référence, la pièce ne peut pas être commune : seul le déplacement est possible.']));
+          if (!peutCopier) corps.appendChild(el('p', { class: 'petit' }, [p.commun === false && p.reference ? 'Pièce marquée NON (pas commune) dans le Sheet : seul le déplacement est possible.' : 'Sans référence, la pièce ne peut pas être commune : seul le déplacement est possible.']));
           corps.appendChild(msg);
           corps.appendChild(el('button', { class: 'btn-principal', type: 'button', onclick: function () {
             var mat = choixMat.value === '__nouveau' ? nouveauMat.value.trim() : choixMat.value;
@@ -989,8 +1025,15 @@
         var corps = el('div');
         modale(p0.designation || p0.reference || 'Pièce', p0.materiel, [corps]);
         var docs = null;
+        // Pièce affichée : même numéro de ligne ET même référence ou même désignation (une seule des deux change à la fois).
+        // Avant : le numéro de ligne seul -> après un rechargement (ligne ajoutée/supprimée), la fiche montrait une AUTRE pièce.
+        var pCourante = p0;
         function piece() {
-          return pieces(p0.materiel).filter(function (x) { return p0.rowIndex ? x.rowIndex === p0.rowIndex : cle(x) === cle(p0); })[0] || p0;
+          var c = pCourante, l = pieces(c.materiel);
+          var x = (c.rowIndex ? l.filter(function (y) { return y.rowIndex === c.rowIndex && ((c.reference && y.reference === c.reference) || (c.designation && y.designation === c.designation)); })[0] : null)
+            || l.filter(function (y) { return cle(y) === cle(c); })[0];
+          if (x) pCourante = x;
+          return x || c;
         }
         function ligne(lib, val, edit) {
           return [el('dt', {}, [lib]), el('dd', {}, [val === '' || val === null || val === undefined ? el('span', { class: 'petit' }, ['non renseigné']) : String(val),
@@ -1221,70 +1264,133 @@
         }
         setTimeout(function () { c.designation.focus(); }, 30);
       }
-      function ouvrirPanier(p) {
-        if (!p.reference) { PM.toast('Pièce sans référence : impossible de l’ajouter au panier.'); return; }
-        var inp = el('input', { type: 'text', inputmode: 'numeric', value: String(p.quantiteACommander > 0 ? p.quantiteACommander : 1) });
+      /* ---------- panier : les pièces choisies avec 🛒 (avec ou sans référence) ---------- */
+      function ligneDuPanier(p) { var k = cleCmd(p); return lignesCmd().filter(function (x) { return x.statut !== 'Commandé' && cleCmd(x) === k; })[0]; }
+      function ouvrirPanier(p, qPropose) {
+        var deja = ligneDuPanier(p);
+        var q0 = deja ? deja.quantite : (qPropose || (p.quantiteACommander > 0 ? p.quantiteACommander : 1));
+        var inp = el('input', { type: 'text', inputmode: 'numeric', value: String(q0) });
         var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
-        var fermer = modale('Ajouter au panier', (p.designation || p.reference) + ' — réf. ' + p.reference, [
+        var fermer = modale(deja ? 'Déjà dans le panier' : 'Ajouter au panier', (p.designation || p.reference) + ' — ' + (p.reference ? 'réf. ' + p.reference : 'sans référence') + ' · ' + p.materiel, [
           el('div', { class: 'champ' }, [el('label', {}, ['Quantité à commander']), inp]), msg,
           el('button', { class: 'btn-principal', type: 'button', onclick: function () {
             var q = entier(inp.value, 1);
             if (isNaN(q)) { msg.textContent = 'Saisis un nombre entier (1 ou plus).'; msg.hidden = false; return; }
-            fermer(); saisir({ type: 'stock.panier', materiel: p.materiel, reference: p.reference, designation: p.designation, casier: p.casier, quantite: q });
-            PM.toast('Ajouté au panier « À commander »');
-          } }, ['Ajouter au panier'])]);
+            fermer(); saisir({ type: 'stock.panier', materiel: p.materiel, reference: p.reference || '', designation: p.designation, casier: p.casier, quantite: q });
+            PM.toast((deja ? 'Panier mis à jour : ' : 'Ajouté au panier : ') + q + ' × ' + (p.designation || p.reference));
+          } }, [deja ? 'Mettre à jour le panier' : 'Ajouter au panier'])]);
+        setTimeout(function () { inp.focus(); inp.select(); }, 30);
       }
 
-      /* ---------- commandes : À commander -> Commandé -> Reçu ---------- */
-      var listeCommande = null, cmdServeur = null;
+      /* Lignes de l'onglet Commandes (serveur) + saisies pas encore confirmées, appliquées comme le fera le serveur */
+      function lignesCmd() {
+        var liste = (cmdServeur || []).filter(function (x) { return x.origine === 'panier'; }).map(function (x) { return Object.assign({}, x, { reference: String(x.reference === null || x.reference === undefined ? '' : x.reference) }); });
+        var actions = cmdConfirmes.filter(function (c) { return c.t > cmdLu; }).map(function (c) { return c.a; })
+          .concat(attente.filter(function (a) { return TYPES_CMD.indexOf(a.type) >= 0; }));
+        actions.forEach(function (a) {
+          var k = cleCmd(a), enAtt = attente.indexOf(a) >= 0;
+          function trouve(commandee) { return liste.filter(function (x) { return cleCmd(x) === k && (x.statut === 'Commandé') === commandee; })[0]; }
+          function retirer(commandee) { liste = liste.filter(function (x) { return !(cleCmd(x) === k && (commandee === undefined || (x.statut === 'Commandé') === commandee)); }); }
+          var date = new Date(a.horodatage).toLocaleDateString('fr-FR');
+          if (a.type === 'stock.panier') {
+            if (!(a.quantite > 0)) { retirer(false); return; }
+            var b = trouve(false);
+            if (b) { b.quantite = a.quantite; if (a.casier) b.casier = a.casier; b.enAttente = b.enAttente || enAtt; }
+            else liste.push({ origine: 'panier', statut: '', materiel: a.materiel, reference: a.reference || '', designation: a.designation, casier: a.casier, quantite: a.quantite, enAttente: enAtt });
+          } else if (a.type === 'stock.retirerPanier') retirer(a.quoi === 'panier' ? false : a.quoi === 'commande' ? true : undefined);
+          else if (a.type === 'stock.reception') retirer(a.quoi === 'commande' ? true : undefined);
+          else if (a.type === 'stock.commande') {
+            var bp = trouve(false), bc = trouve(true);
+            if (bp && bc) { bc.quantite = (bc.quantite || 0) + a.quantite; bc.fournisseur = a.fournisseur || bc.fournisseur; bc.dateCommande = date; bc.enAttente = bc.enAttente || enAtt; liste = liste.filter(function (x) { return x !== bp; }); }
+            else if (bp || bc) { var x = bp || bc; x.statut = 'Commandé'; x.quantite = a.quantite; x.fournisseur = a.fournisseur; x.dateCommande = date; x.enAttente = x.enAttente || enAtt; }
+            else liste.push({ origine: 'panier', statut: 'Commandé', materiel: a.materiel, reference: a.reference || '', designation: a.designation, casier: a.casier, quantite: a.quantite, fournisseur: a.fournisseur, dateCommande: date, enAttente: enAtt });
+          }
+        });
+        return liste;
+      }
+      /* Pièces sous le seuil mini (calculées ici avec le stock à jour, saisies en attente comprises).
+         Une pièce commune à plusieurs matériels n'apparaît qu'une fois ; une pièce déjà au panier ou commandée n'y est plus. */
+      function lignesSeuil(cmd) {
+        var parCle = {}, res = [];
+        toutesPieces().forEach(function (p) {
+          if (!p.stockBas || !(p.quantiteACommander > 0)) return;
+          var kc = cleCommune(p);
+          var deja = cmd.some(function (x) {
+            if (!kc) return cleCmd(x) === cleCmd(p);
+            return String(p.reference || '').trim() ? refNorm(x.reference) === refNorm(p.reference) : (!String(x.reference || '').trim() && String(x.designation || '').trim() === String(p.designation || '').trim());
+          });
+          if (deja) return;
+          var k = kc ? 'c|' + kc : 'l|' + cleCmd(p);
+          if (parCle[k]) { if (parCle[k].materiels.indexOf(p.materiel) < 0) parCle[k].materiels.push(p.materiel); return; }
+          res.push(parCle[k] = { origine: 'seuil', statut: '', materiel: p.materiel, materiels: [p.materiel], reference: p.reference || '', designation: p.designation, casier: p.casier,
+            quantite: p.quantiteACommander, stock: p.quantiteStock, seuil: p.seuil, piece: p });
+        });
+        return res;
+      }
+      function compteurs() {
+        var cmd = lignesCmd();
+        return { panier: cmd.filter(function (x) { return x.statut !== 'Commandé'; }).length, commande: cmd.filter(function (x) { return x.statut === 'Commandé'; }).length, seuil: lignesSeuil(cmd).length };
+      }
+
+      /* ---------- commandes : 🛒 Mon panier -> Commandé -> Reçu ; ⚠ sous le seuil à part ---------- */
       function ecranCommander(racine) {
-        racine.appendChild(el('div', { class: 'pp-barre' }, [el('h2', { class: 'pp-titre' }, ['Commandes']),
-          el('button', { class: 'btn-second', type: 'button', onclick: exporterPdf }, ['🧾 Export PDF'])]));
+        racine.appendChild(el('div', { class: 'pp-barre' }, [el('h2', { class: 'pp-titre' }, ['Commandes'])]));
         var zone = el('div');
         racine.appendChild(zone);
         function rendre() {
           zone.innerHTML = '';
-          var liste = (cmdServeur || []).slice();
-          // pièces sous seuil recalculées avec le stock à jour (y compris saisies en attente)
-          var pieceDe = {};
-          toutesPieces().forEach(function (p) { pieceDe[p.materiel + '|' + p.reference] = p; });
-          liste = liste.filter(function (x) {
-            if (x.origine !== 'seuil') return true;
-            var p = pieceDe[x.materiel + '|' + x.reference];
-            if (p) x.quantite = p.quantiteACommander;
-            return !p || p.quantiteACommander > 0;
-          });
-          attente.forEach(function (a) {
-            if (['stock.panier', 'stock.retirerPanier', 'stock.commande', 'stock.reception'].indexOf(a.type) < 0) return;
-            var avant = liste.filter(function (x) { return x.materiel === a.materiel && x.reference === a.reference; })[0];
-            liste = liste.filter(function (x) { return x !== avant; });
-            if (a.type === 'stock.panier') liste.push({ origine: 'panier', statut: avant && avant.statut || '', materiel: a.materiel, reference: a.reference, designation: a.designation, casier: a.casier, quantite: a.quantite, fournisseur: avant && avant.fournisseur, dateCommande: avant && avant.dateCommande, enAttente: true });
-            if (a.type === 'stock.commande') liste.push({ origine: 'panier', statut: 'Commandé', materiel: a.materiel, reference: a.reference, designation: a.designation, casier: a.casier, quantite: a.quantite, fournisseur: a.fournisseur, dateCommande: new Date(a.horodatage).toLocaleDateString('fr-FR'), enAttente: true });
-          });
-          listeCommande = liste;
-          var aCmd = liste.filter(function (x) { return x.statut !== 'Commandé'; });
+          var liste = lignesCmd();
+          var panier = liste.filter(function (x) { return x.statut !== 'Commandé'; });
           var cmd = liste.filter(function (x) { return x.statut === 'Commandé'; });
-          zone.appendChild(el('h3', { class: 'pp-h3' }, ['À commander (' + aCmd.length + ')']));
-          zone.appendChild(aCmd.length ? tableau(['Pièce', 'Qté', ''], aCmd.map(ligneACommander), 'st-cmd') : el('p', { class: 'petit' }, ['Rien à commander pour le moment 🎉']));
-          zone.appendChild(el('h3', { class: 'pp-h3', style: 'margin-top:16px' }, ['Commandé, en attente de réception (' + cmd.length + ')']));
-          zone.appendChild(cmd.length ? tableau(['Pièce', 'Qté', ''], cmd.map(ligneCommandee), 'st-cmd') : el('p', { class: 'petit' }, ['Aucune commande en cours.']));
+          var seuil = lignesSeuil(liste);
+          // 1) Mon panier : seulement les pièces choisies avec 🛒
+          var c1 = el('section', { class: 'bandeau st-cmd-carte st-cmd-panier' }, [
+            el('h3', { class: 'pp-h3' }, ['🛒 Mon panier (' + panier.length + ')']),
+            el('p', { class: 'petit' }, ['Les pièces que tu as choisies avec 🛒. Le bon de commande PDF ne reprend que ces lignes.'])]);
+          if (panier.length) {
+            c1.appendChild(tableau(['Pièce', 'Qté', ''], panier.map(ligneDuPanierCmd), 'st-cmd'));
+            c1.appendChild(el('div', { class: 'bg-boutons st-cmd-boutons' }, [
+              el('button', { class: 'btn-second st-danger', type: 'button', onclick: function () {
+                if (!confirm('Vider le panier (' + panier.length + ' pièce' + (panier.length > 1 ? 's' : '') + ') ?\nLes commandes déjà passées ne sont pas touchées.')) return;
+                panier.forEach(function (it) { saisir({ type: 'stock.retirerPanier', quoi: 'panier', materiel: it.materiel, reference: it.reference, designation: it.designation }); });
+                PM.toast('Panier vidé');
+              } }, ['Vider le panier']),
+              el('button', { class: 'btn-principal', type: 'button', onclick: function () { ouvrirBonDeCommande(panier); } }, ['🧾 Bon de commande (PDF)'])]));
+          } else c1.appendChild(el('p', { class: 'petit st-cmd-vide' }, ['Panier vide : touche 🛒 sur une pièce, ou « + Panier » dans la liste « Sous le seuil mini » ci-dessous.']));
+          zone.appendChild(c1);
+          // 2) Sous le seuil mini : liste automatique, on choisit ce qu'on met au panier
+          var c2 = el('section', { class: 'bandeau st-cmd-carte st-cmd-seuil' }, [
+            el('h3', { class: 'pp-h3' }, ['⚠ Sous le seuil mini (' + seuil.length + ')']),
+            el('p', { class: 'petit' }, ['Liste automatique : stock au seuil mini ou en dessous. Touche « + Panier » pour choisir ce que tu commandes.'])]);
+          if (seuil.length) {
+            c2.appendChild(tableau(['Pièce', 'Manque', ''], seuil.map(ligneSeuil), 'st-cmd'));
+            c2.appendChild(el('div', { class: 'bg-boutons' }, [el('button', { class: 'btn-second', type: 'button', onclick: function () { exporterSeuil(seuil); } }, ['Exporter cette liste (PDF)'])]));
+          } else c2.appendChild(el('p', { class: 'petit' }, ['Aucune pièce sous le seuil mini 🎉']));
+          zone.appendChild(c2);
+          // 3) Commandé, en attente de réception (inchangé)
+          var c3 = el('section', { class: 'bandeau st-cmd-carte' }, [el('h3', { class: 'pp-h3' }, ['📦 Commandé, en attente de réception (' + cmd.length + ')'])]);
+          c3.appendChild(cmd.length ? tableau(['Pièce', 'Qté', ''], cmd.map(ligneCommandee), 'st-cmd') : el('p', { class: 'petit' }, ['Aucune commande en cours.']));
+          zone.appendChild(c3);
         }
         function descr(it) {
+          var mats = it.materiels && it.materiels.length > 1 ? it.materiels.join(' + ') : it.materiel;
           return el('td', {}, [it.designation || it.reference,
-            el('span', { class: 'st-badge ' + (it.origine === 'panier' ? 'st-partage' : 'st-alerte') }, [it.origine === 'panier' ? 'Panier' : 'Seuil']),
             it.enAttente ? el('span', { class: 'st-badge st-envoi' }, ['à envoyer']) : null,
-            el('div', { class: 'st-sous' }, [it.materiel + ' · réf. ' + (it.reference || '—') + (it.casier ? ' · ' + rangementTexte(it.casier) : '') +
+            el('div', { class: 'st-sous' }, [(it.reference ? 'réf. ' + it.reference : 'sans référence') + ' · ' + mats + (it.casier ? ' · ' + rangementTexte(it.casier) : '') +
+              (it.origine === 'seuil' ? ' · stock ' + it.stock + ' / seuil ' + it.seuil : '') +
               (it.statut === 'Commandé' ? ' · commandé le ' + (it.dateCommande || '?') + (it.fournisseur ? ' chez ' + it.fournisseur : '') : '')])]);
         }
+        function pieceDe(it) { var k = cleCmd(it); return pieces(it.materiel).filter(function (x) { return cleCmd(x) === k; })[0]; }
         function voir(it) { return el('button', { class: 'pp-icone', type: 'button', title: 'Voir la pièce', onclick: function () {
-          var p = pieces(it.materiel).filter(function (x) { return x.reference === it.reference; })[0];
-          if (p) ouvrirFiche(p); else PM.toast('Pièce introuvable');
+          var p = it.piece || pieceDe(it);
+          if (p) ouvrirFiche(p); else PM.toast('Pièce introuvable dans « ' + it.materiel + ' » : elle a peut-être été renommée ou supprimée.');
         } }, ['👁']); }
-        function ligneACommander(it) {
+        function ligneDuPanierCmd(it) {
           function changer(d) {
             var q = Math.max(0, (it.quantite || 0) + d);
-            if (q === it.quantite || (q === 0 && it.origine !== 'panier')) return;
-            saisir(q === 0 ? { type: 'stock.retirerPanier', materiel: it.materiel, reference: it.reference }
+            if (q === it.quantite) return;
+            if (q === 0 && !confirm('Retirer « ' + (it.designation || it.reference) + ' » du panier ?')) return;
+            saisir(q === 0 ? { type: 'stock.retirerPanier', quoi: 'panier', materiel: it.materiel, reference: it.reference, designation: it.designation }
               : { type: 'stock.panier', materiel: it.materiel, reference: it.reference, designation: it.designation, casier: it.casier, quantite: q });
           }
           return el('tr', { class: it.enAttente ? 'attente' : '' }, [descr(it),
@@ -1294,7 +1400,13 @@
             el('td', { class: 'pp-actions' }, [
               el('button', { class: 'btn-second st-mini', type: 'button', title: 'Marquer comme commandé', onclick: function () { ouvrirCommande(it); } }, ['Commandé']),
               voir(it),
-              it.origine === 'panier' ? el('button', { class: 'pp-icone pp-danger', type: 'button', title: 'Retirer de la liste', onclick: function () { saisir({ type: 'stock.retirerPanier', materiel: it.materiel, reference: it.reference }); } }, ['🗑']) : null])]);
+              el('button', { class: 'pp-icone pp-danger', type: 'button', title: 'Retirer du panier', onclick: function () { saisir({ type: 'stock.retirerPanier', quoi: 'panier', materiel: it.materiel, reference: it.reference, designation: it.designation }); } }, ['🗑'])])]);
+        }
+        function ligneSeuil(it) {
+          return el('tr', {}, [descr(it), el('td', {}, [el('b', {}, [String(it.quantite)])]),
+            el('td', { class: 'pp-actions' }, [
+              el('button', { class: 'btn-second st-mini', type: 'button', title: 'Ajouter au panier', onclick: function () { ouvrirPanier(it.piece, it.quantite); } }, ['+ Panier']),
+              voir(it)])]);
         }
         function ligneCommandee(it) {
           return el('tr', { class: it.enAttente ? 'attente' : '' }, [descr(it), el('td', {}, [el('b', {}, [String(it.quantite)])]),
@@ -1302,15 +1414,14 @@
               el('button', { class: 'btn-principal st-mini', type: 'button', title: 'Commande reçue : ajouter au stock', onclick: function () { ouvrirReception(it); } }, ['Reçu']),
               voir(it),
               el('button', { class: 'pp-icone pp-danger', type: 'button', title: 'Annuler la commande', onclick: function () {
-                if (confirm('Annuler la commande de ' + (it.designation || it.reference) + ' ?')) saisir({ type: 'stock.retirerPanier', materiel: it.materiel, reference: it.reference });
+                if (confirm('Annuler la commande de ' + (it.designation || it.reference) + ' ?')) saisir({ type: 'stock.retirerPanier', quoi: 'commande', materiel: it.materiel, reference: it.reference, designation: it.designation });
               } }, ['🗑'])])]);
         }
         function ouvrirCommande(it) {
-          if (!it.reference) { PM.toast('Pièce sans référence.'); return; }
           var q = el('input', { type: 'text', inputmode: 'numeric', value: String(it.quantite || 1) });
           var four = el('input', { type: 'text', placeholder: 'ex : Vogelsang, Wangen, Bauer…', value: PM.Prefs.get('stock_dernier_fournisseur', '') });
           var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
-          var fermer = modale('Marquer comme commandé', (it.designation || it.reference) + ' — réf. ' + it.reference, [
+          var fermer = modale('Marquer comme commandé', (it.designation || it.reference) + ' — ' + (it.reference ? 'réf. ' + it.reference : 'sans référence'), [
             el('div', { class: 'pp-deux' }, [el('div', { class: 'champ' }, [el('label', {}, ['Quantité commandée']), q]), el('div', { class: 'champ' }, [el('label', {}, ['Fournisseur (facultatif)']), four])]), msg,
             el('button', { class: 'btn-principal', type: 'button', onclick: function () {
               var n = entier(q.value, 1);
@@ -1322,52 +1433,158 @@
         function ouvrirReception(it) {
           var q = el('input', { type: 'text', inputmode: 'numeric', value: String(it.quantite || 1) });
           var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
-          var p = pieces(it.materiel).filter(function (x) { return x.reference === it.reference; })[0];
+          var p = pieceDe(it);
           var fermer = modale('Commande reçue', (it.designation || it.reference) + (p ? ' — stock actuel : ' + p.quantiteStock : ''), [
             el('div', { class: 'champ' }, [el('label', {}, ['Quantité reçue (ajoutée au stock)']), q]), msg,
             el('button', { class: 'btn-principal', type: 'button', onclick: function () {
               var n = entier(q.value, 1);
               if (isNaN(n)) { msg.textContent = 'Quantité : nombre entier (1 ou plus).'; msg.hidden = false; return; }
-              fermer(); saisir({ type: 'stock.reception', materiel: it.materiel, reference: it.reference, designation: it.designation, rowIndex: p && p.rowIndex, quantite: n, fournisseur: it.fournisseur || '' });
+              fermer(); saisir(Object.assign({ type: 'stock.reception', quoi: 'commande', materiel: it.materiel, reference: it.reference, designation: it.designation, quantite: n, fournisseur: it.fournisseur || '' },
+                p ? { rowIndex: p.rowIndex, empreinte: { casier: p.casier || '', cotes: p.cotes || '' } } : {}));
               PM.toast('Reçu : +' + n + ' en stock');
             } }, ['Ajouter au stock'])]);
         }
         var cacheCmd = 'stock_commander_' + S;
-        PM.DB.get(cacheCmd).then(function (c) { if (cmdServeur === null) { cmdServeur = c || []; if (ecran === 'commander') rendre(); } });
-        if (!modeDemo) api('stock.commander', {}, 60000).then(function (j) {
-          cmdServeur = j.liste || []; PM.DB.set(cacheCmd, cmdServeur);
-          if (ecran === 'commander' && actif() && !document.querySelector('.ag-modale')) rendre();
-        })['catch'](function (e) { PM.toast((PM.raison ? PM.raison(e) : 'Hors ligne') + ' : commandes du dernier chargement', 4000); });
-        else if (cmdServeur === null) { cmdServeur = toutesPieces().filter(function (p) { return p.quantiteACommander > 0; }).map(function (p) { return { origine: 'seuil', statut: '', materiel: p.materiel, reference: p.reference, designation: p.designation, casier: p.casier, quantite: p.quantiteACommander }; }); }
+        if (cmdServeur === null) PM.DB.get(cacheCmd).then(function (c) { if (cmdServeur === null) { cmdServeur = c || []; if (ecran === 'commander' && actif()) rendre(); } });
+        if (!modeDemo) {
+          var depart = Date.now();
+          api('stock.commander', { panierSeul: true }, 60000).then(function (j) {
+            cmdServeur = (j.liste || []).filter(function (x) { return x.origine === 'panier'; }); cmdLu = depart; PM.DB.set(cacheCmd, cmdServeur);
+            if (ecran === 'commander' && actif() && !document.querySelector('.ag-modale')) rendre();
+          })['catch'](function (e) { PM.toast((PM.raison ? PM.raison(e) : 'Hors ligne') + ' : commandes du dernier chargement', 4000); });
+        } else if (cmdServeur === null) cmdServeur = [];
         if (cmdServeur !== null) rendre();
       }
-      function exporterPdf() {
-        var liste = (listeCommande || []).filter(function (x) { return x.statut !== 'Commandé'; });
-        if (!liste.length) { PM.toast('Rien à exporter pour le moment.'); return; }
-        var charge = window.jspdf ? Promise.resolve() : new Promise(function (ok, ko) {
+
+      /* ---------- PDF (jsPDF chargé à la demande) ---------- */
+      function chargerJsPdf() {
+        if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+        return new Promise(function (ok, ko) {
           var s = document.createElement('script');
           s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-          s.onload = ok; s.onerror = ko; document.head.appendChild(s);
+          s.onload = function () { window.jspdf && window.jspdf.jsPDF ? ok(window.jspdf.jsPDF) : ko(new Error('jsPDF absent')); };
+          s.onerror = function () { s.remove(); ko(new Error('chargement impossible')); };
+          document.head.appendChild(s);
         });
-        charge.then(function () {
-          var doc = new window.jspdf.jsPDF(), y = 18;
-          doc.setFontSize(14); doc.text('A commander - Pieces detachees - ' + (T.site || ctx.site.nom), 14, y); y += 8;
-          doc.setFontSize(10); doc.text(new Date().toLocaleDateString('fr-FR'), 14, y); y += 10;
-          var x = [14, 55, 112, 165, 185];
-          doc.setFontSize(9); doc.setFont(undefined, 'bold');
-          ['Reference', 'Piece', 'Materiel', 'Casier', 'Qte'].forEach(function (c, i) { doc.text(c, x[i], y); });
-          doc.setFont(undefined, 'normal'); y += 4; doc.setLineWidth(0.2); doc.line(14, y, 196, y); y += 6;
-          liste.forEach(function (it) {
-            if (y > 280) { doc.addPage(); y = 18; }
-            doc.text(String(it.reference || '-'), x[0], y);
-            doc.text(String(it.designation || '-').substring(0, 24), x[1], y);
-            doc.text(String(it.materiel || '').substring(0, 22), x[2], y);
-            doc.text(String(it.casier || '-'), x[3], y);
-            doc.text(String(it.quantite), x[4], y);
-            y += 6;
+      }
+      // Police standard du PDF (Helvetica) = caractères latins seulement : accents OK, le reste est remplacé
+      function latin1(t) {
+        return String(t === null || t === undefined ? '' : t).replace(/[’‘‚′`]/g, "'").replace(/[“”„″]/g, '"').replace(/[—–‑−]/g, '-').replace(/…/g, '...')
+          .replace(/œ/g, 'oe').replace(/Œ/g, 'OE').replace(/€/g, 'EUR').replace(/[   ]/g, ' ').replace(/[^\x00-\xFF]/g, '').replace(/\s+/g, ' ').trim();
+      }
+      function deuxChiffres(n) { return (n < 10 ? '0' : '') + n; }
+      /* o = { titre, lignes:[{reference, designation, materiel(s), quantite}], numero, fournisseur, demandeur, remarques, signatures, fichier } */
+      function fabriquerPdf(JsPDF, o) {
+        var doc = new JsPDF({ unit: 'mm', format: 'a4' }), G = 14, D = 196, BAS = 280, y;
+        var site = latin1(T.site || ctx.site.nom), date = new Date().toLocaleDateString('fr-FR');
+        var col = [{ x: G, w: 36, t: 'Réf.' }, { x: G + 38, w: 84, t: 'Désignation' }, { x: G + 124, w: 40, t: 'Matériel' }, { x: D, w: 14, t: 'Qté', droite: true }];
+        function enteteTableau() {
+          doc.setFillColor(232, 236, 235); doc.rect(G, y - 5, D - G, 8, 'F');
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(30, 40, 38);
+          col.forEach(function (c) { doc.text(latin1(c.t), c.x + (c.droite ? 0 : 1), y, c.droite ? { align: 'right' } : undefined); });
+          doc.setFont('helvetica', 'normal'); y += 7;
+        }
+        // en-tête
+        y = 20;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(20, 30, 28); doc.text(latin1(o.titre), G, y);
+        doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+        if (o.numero) doc.text('N° ' + o.numero, D, y - 5, { align: 'right' });
+        doc.text('Date : ' + date, D, y + 1, { align: 'right' });
+        y += 8; doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.text(site, G, y);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text('Pièces détachées', G, y + 5);
+        y += 11;
+        var infos = [];
+        if (o.demandeur !== undefined) infos.push(['Demandé par', latin1(o.demandeur) || '-']);
+        if (o.fournisseur !== undefined) infos.push(['Fournisseur', latin1(o.fournisseur) || 'à préciser']);
+        if (infos.length) {
+          doc.setDrawColor(190, 198, 196); doc.setLineWidth(0.3); doc.rect(G, y, D - G, 7 * infos.length + 3);
+          infos.forEach(function (l, i) { doc.setFont('helvetica', 'bold'); doc.text(latin1(l[0]) + ' :', G + 3, y + 6 + i * 7); doc.setFont('helvetica', 'normal'); doc.text(l[1], G + 33, y + 6 + i * 7); });
+          y += 7 * infos.length + 11;
+        } else y += 4;
+        enteteTableau();
+        // lignes (désignations longues : retour à la ligne, jamais coupées)
+        var total = 0;
+        doc.setFontSize(9.5);
+        o.lignes.forEach(function (it, i) {
+          var mat = it.materiels && it.materiels.length ? it.materiels.join(', ') : it.materiel;
+          var cell = [doc.splitTextToSize(latin1(it.reference) || '-', col[0].w - 2), doc.splitTextToSize(latin1(it.designation) || '-', col[1].w - 2), doc.splitTextToSize(latin1(mat) || '-', col[2].w - 2)];
+          var n = Math.max(cell[0].length, cell[1].length, cell[2].length), h = n * 4.2 + 2.8;
+          if (y + h - 4 > BAS) { doc.addPage(); y = 20; enteteTableau(); doc.setFontSize(9.5); }
+          if (i % 2) { doc.setFillColor(246, 248, 247); doc.rect(G, y - 4.2, D - G, h, 'F'); }
+          doc.setTextColor(30, 40, 38);
+          cell.forEach(function (lignes, k) { doc.text(lignes, col[k].x + 1, y); });
+          doc.setFont('helvetica', 'bold'); doc.text(String(it.quantite), D - 1, y, { align: 'right' }); doc.setFont('helvetica', 'normal');
+          doc.setDrawColor(220, 225, 224); doc.setLineWidth(0.1); doc.line(G, y - 4.2 + h, D, y - 4.2 + h);
+          y += h; total += Number(it.quantite) || 0;
+        });
+        y += 4;
+        if (y > BAS) { doc.addPage(); y = 20; }
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+        doc.text('Total : ' + o.lignes.length + ' ligne' + (o.lignes.length > 1 ? 's' : '') + ', ' + total + ' pièce' + (total > 1 ? 's' : ''), D, y, { align: 'right' });
+        doc.setFont('helvetica', 'normal'); y += 8;
+        if (o.signatures) {
+          var rem = doc.splitTextToSize(latin1(o.remarques), D - G - 6), hR = Math.max(22, rem.length * 4.5 + 10);
+          if (y + hR + 38 > 287) { doc.addPage(); y = 20; }
+          doc.setDrawColor(190, 198, 196); doc.setLineWidth(0.3); doc.rect(G, y, D - G, hR);
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.text('Remarques', G + 3, y + 5);
+          doc.setFont('helvetica', 'normal'); if (rem.length) doc.text(rem, G + 3, y + 10);
+          y += hR + 6;
+          var l2 = (D - G - 6) / 2;
+          [['Demandeur', G], ['Validation / visa', G + l2 + 6]].forEach(function (s) {
+            doc.rect(s[1], y, l2, 30);
+            doc.setFont('helvetica', 'bold'); doc.text(latin1(s[0]), s[1] + 3, y + 5);
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.text('Date et signature :', s[1] + 3, y + 10); doc.setFontSize(9.5);
           });
-          doc.save('a-commander-' + new Date().toISOString().slice(0, 10) + '.pdf');
-        })['catch'](function () { PM.toast('La bibliothèque PDF n’a pas pu se charger. Vérifie ta connexion.'); });
+        }
+        // pied de page : numéro de page sur chaque page
+        var nb = doc.getNumberOfPages();
+        for (var p = 1; p <= nb; p++) {
+          doc.setPage(p); doc.setFontSize(8); doc.setTextColor(120, 130, 128);
+          doc.text(latin1(site + ' - ' + o.titre.toLowerCase() + (o.numero ? ' ' + o.numero : '') + ' - ' + date), G, 290);
+          doc.text('Page ' + p + ' / ' + nb, D, 290, { align: 'right' });
+        }
+        doc.save(o.fichier);
+      }
+      function erreurPdf(e) {
+        PM.toast(/chargement|jsPDF/.test(e && e.message || '') ? 'Pas de connexion : la bibliothèque PDF n’a pas pu se charger. Réessaie avec du réseau.'
+          : 'Le PDF n’a pas pu être créé (' + ((e && e.message) || 'erreur inconnue') + ') : réessaie, ou recharge l’appli.', 6000);
+      }
+      /* Bon de commande : UNIQUEMENT les pièces du panier. Fournisseur demandé avant (prérempli avec le dernier utilisé). */
+      function ouvrirBonDeCommande(panier) {
+        if (!panier.length) { PM.toast('Le panier est vide : rien à mettre dans le bon de commande.'); return; }
+        var agent = PM.Prefs.get('agent', '');
+        if (!agent) { demanderAgent(function () { ouvrirBonDeCommande(panier); }); return; }
+        var four = el('input', { type: 'text', placeholder: 'ex : Vogelsang, Wangen, Bauer…', value: PM.Prefs.get('stock_dernier_fournisseur', ''), autocomplete: 'off' });
+        var rem = el('textarea', { rows: '3', placeholder: 'ex : livraison au site, urgent…' });
+        var coche = el('input', { type: 'checkbox' });
+        var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
+        var btn = el('button', { class: 'btn-principal', type: 'button' }, ['🧾 Créer le PDF']);
+        var fermer = modale('Bon de commande', panier.length + ' ligne' + (panier.length > 1 ? 's' : '') + ' du panier · demandé par ' + agent, [
+          el('div', { class: 'champ' }, [el('label', {}, ['Fournisseur (facultatif)']), four]),
+          el('div', { class: 'champ' }, [el('label', {}, ['Remarques (facultatif)']), rem]),
+          el('label', { class: 'st-coche' }, [coche, ' Marquer ces pièces comme commandées']), msg, btn]);
+        btn.onclick = function () {
+          var f = four.value.trim(), d = new Date();
+          var numero = 'BC-' + d.getFullYear() + deuxChiffres(d.getMonth() + 1) + deuxChiffres(d.getDate()) + '-' + deuxChiffres(d.getHours()) + deuxChiffres(d.getMinutes());
+          PM.Prefs.set('stock_dernier_fournisseur', f);
+          btn.disabled = true; btn.textContent = 'Création du PDF…';
+          chargerJsPdf().then(function (JsPDF) {
+            fabriquerPdf(JsPDF, { titre: 'BON DE COMMANDE', lignes: panier, numero: numero, fournisseur: f, demandeur: agent, remarques: rem.value.trim(), signatures: true,
+              fichier: 'bon-de-commande-' + d.toISOString().slice(0, 10) + '.pdf' });
+            fermer();
+            if (coche.checked) {
+              panier.forEach(function (it) { saisir({ type: 'stock.commande', materiel: it.materiel, reference: it.reference, designation: it.designation, casier: it.casier, quantite: it.quantite, fournisseur: f }); });
+              PM.toast('Bon ' + numero + ' créé · ' + panier.length + ' pièce(s) passée(s) en « Commandé »', 5000);
+            } else PM.toast('Bon de commande ' + numero + ' créé');
+          })['catch'](function (e) { btn.disabled = false; btn.textContent = '🧾 Créer le PDF'; msg.hidden = true; erreurPdf(e); });
+        };
+        setTimeout(function () { four.focus(); }, 30);
+      }
+      function exporterSeuil(liste) {
+        if (!liste.length) { PM.toast('Aucune pièce sous le seuil mini : rien à exporter.'); return; }
+        chargerJsPdf().then(function (JsPDF) {
+          fabriquerPdf(JsPDF, { titre: 'PIÈCES SOUS LE SEUIL MINI', lignes: liste, fichier: 'sous-le-seuil-' + new Date().toISOString().slice(0, 10) + '.pdf' });
+        })['catch'](erreurPdf);
       }
 
       /* ---------- recherche sur tous les sites (serveur) ---------- */
@@ -1462,6 +1679,27 @@
           var r = j.rapport || {};
           zone.innerHTML = '';
           var total = 0;
+          // Étapes secondaires qui ont planté (copie sur l'autre site, historique, contrôle de nuit…) : la saisie elle-même est gardée
+          var soucis = j.soucis || [];
+          if (T) T.nbSoucis = soucis.length;
+          if (soucis.length) {
+            var bs = el('div', { class: 'bandeau st-soucis' }, [
+              el('b', {}, ['⚠ Étapes non terminées (' + soucis.length + ')']),
+              el('p', { class: 'petit' }, ['La saisie est bien enregistrée ; la mise en commun / le contrôle de nuit remettra les deux sites d’accord.'])]);
+            soucis.slice(0, 20).forEach(function (x) { bs.appendChild(el('div', { class: 'st-emplacement' }, [new Date(x.quand).toLocaleString('fr-FR') + ' — ' + x.message])); });
+            var bEff = el('button', { class: 'btn-second', type: 'button', onclick: function () {
+              bEff.disabled = true;
+              api('stock.soucisEffacer', { jusqua: soucis[0].quand }, 30000).then(function (k) {
+                var reste = k.soucis || [];
+                if (T) T.nbSoucis = reste.length;
+                PM.toast(reste.length ? 'Effacé (' + reste.length + ' nouveau(x) souci(s) arrivé(s) entre-temps : rouvre le contrôle pour les voir)' : 'Soucis effacés');
+                bs.remove();
+                var bo = vue.querySelector('.st-outils'); if (bo) bo.replaceWith(barreOutils()); // pastille ⚠ de 🩺 à jour, sans relancer tout le contrôle
+              })['catch'](function (e) { bEff.disabled = false; PM.toast('Impossible d’effacer : ' + e.message + '. Réessaie avec du réseau.', 5000); });
+            } }, ['J’ai vu, effacer']);
+            bs.appendChild(el('div', { class: 'bg-boutons' }, [bEff]));
+            zone.appendChild(bs);
+          }
           function bloc(titre, aide, liste, texte) {
             total += liste.length;
             var d = el('details', { class: 'bandeau st-controle' + (liste.length ? '' : ' st-ok-bloc') }, [

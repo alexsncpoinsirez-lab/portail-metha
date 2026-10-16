@@ -87,7 +87,9 @@
   /* ---------- outils ---------- */
   function byDate(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }
   function pad(n) { return String(n).padStart(2, '0'); }
-  function statusFor(v, t) { if (v >= t) return 'crit'; if (v >= t * 0.8) return 'warn'; return 'good'; }
+  // seuil à 0 ou absent = pas d'alerte sur ce point (même règle que le serveur) : toujours « Conforme »
+  function statusFor(v, t) { if (!(t > 0)) return 'good'; if (v >= t) return 'crit'; if (v >= t * 0.8) return 'warn'; return 'good'; }
+  function estNombre(v) { return typeof v === 'number' && !isNaN(v); }
   function statusLabel(s) { return s === 'crit' ? 'Seuil dépassé' : s === 'warn' ? 'Proche du seuil' : 'Conforme'; }
   function fmtDateShort(s) { var d = new Date(s); return isNaN(d) ? s : d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }); }
   function fmtDateTime(s) {
@@ -283,6 +285,7 @@
         rows.forEach(function (r) {
           tbody.appendChild(el('tr', { class: r.enAttente ? 'attente' : '' }, [boutonModifier(r, function () { editionReleve = r; onglet = 'analyse'; afficher(); window.scrollTo(0, 0); }),
             el('td', { class: 'date-cell' }, [fmtDateTime(r.date) + (r.enAttente ? ' ⏳' : '')])].concat(POINTS.map(function (p) {
+            if (!estNombre(r[p.key])) return el('td', { class: 'val-cell' }, ['—']); // case vide dans le Sheet : pas « 0 ppm »
             var st3 = statusFor(r[p.key], S[p.key]);
             return el('td', { class: 'val-cell' }, [el('span', { class: 'status-pill ' + st3 }, [el('span', { class: 'dot' }), fmtVal(r[p.key]) + ' ' + UNIT])]);
           }))));
@@ -348,7 +351,11 @@
           var nx = X(near.t), ny = Y(near.v);
           cross.setAttribute('x1', nx); cross.setAttribute('x2', nx); cross.style.opacity = 1;
           dot.setAttribute('cx', nx); dot.setAttribute('cy', ny); dot.style.opacity = 1;
-          tooltipEl.innerHTML = fmtDateTime(near.date) + '<br><b>' + fmtVal(near.v) + ' ' + UNIT + '</b>';
+          // texte posé avec textContent : une date abîmée venue du Sheet ne peut pas injecter de code
+          tooltipEl.textContent = '';
+          tooltipEl.appendChild(document.createTextNode(fmtDateTime(near.date)));
+          tooltipEl.appendChild(el('br'));
+          tooltipEl.appendChild(el('b', {}, [fmtVal(near.v) + ' ' + UNIT]));
           tooltipEl.style.left = Math.min(Math.max(nx / W * 100, 18), 82) + '%'; tooltipEl.style.top = (ny / H * 100) + '%'; tooltipEl.style.opacity = 1;
         }
         hit.addEventListener('pointermove', onMove);
@@ -367,7 +374,7 @@
           el('div', { class: 'champ' }, [el('label', {}, ['Date et heure du relevé']), date])]);
         POINTS.forEach(function (p) {
           var etat = el('span', { class: 'nh3-etat' });
-          var inp = el('input', { type: 'text', inputmode: 'decimal', placeholder: 'ppm', autocomplete: 'off', value: E && typeof E[p.key] === 'number' ? String(E[p.key]).replace('.', ',') : '' });
+          var inp = el('input', { type: 'text', inputmode: 'decimal', placeholder: 'ppm', autocomplete: 'off', value: E && estNombre(E[p.key]) ? String(E[p.key]).replace('.', ',') : '' });
           inp.addEventListener('input', function () {
             var v = nb(inp.value);
             if (v === null) { etat.className = 'nh3-etat'; etat.textContent = ''; return; }
@@ -470,7 +477,11 @@
             boutonModifier(m, function () { editionMouvement = m; formCharbonOuvert = true; afficher(); window.scrollTo(0, 0); }),
             el('td', { class: 'date-cell' }, [fmtDateTime(m.date) + (m.enAttente ? ' ⏳' : '')]),
             el('td', {}, [m.cuve]), el('td', {}, [m.typeMouvement]),
-            el('td', { html: (m.couches || []).map(function (c) { return c.type + ' — ' + fmtKg(c.quantite) + ' kg'; }).join('<br>') }),
+            el('td', {}, (m.couches || []).reduce(function (acc, c, i) {
+              if (i) acc.push(el('br'));
+              acc.push(String(c.type) + ' — ' + fmtKg(c.quantite) + ' kg'); // type de charbon écrit en texte, jamais en HTML
+              return acc;
+            }, [])),
             el('td', { class: 'val-cell' }, [fmtKg(total) + ' kg']),
             el('td', { class: 'val-cell' }, [(m.heuresCompteur !== null && m.heuresCompteur !== undefined) ? fmtKg(m.heuresCompteur) + ' h' : '—']),
             el('td', { class: 'val-cell' }, [dd && dd.ongoing ? 'En cours' : dd && typeof dd.h === 'number' ? fmtKg(dd.h) + ' h' : '—'])
