@@ -19,7 +19,7 @@
   var OUTIL_DU_SITE = { site1: 'stock-rotte', site2: 'stock-arr' }; // site1/site2 = ordre de l'onglet Sites du hub
   var MOTIFS_SORTIE = ['Intervention', 'Correction', 'Autre'];
   var MOTIFS_ENTREE = ['Réception commande', 'Retour de pièce', 'Correction', 'Autre'];
-  var TYPES_PIECE = ['stock.quantite', 'stock.reception', 'stock.seuil', 'stock.casier', 'stock.designation', 'stock.reference', 'stock.photo', 'stock.retirerPhoto'];
+  var TYPES_PIECE = ['stock.quantite', 'stock.reception', 'stock.seuil', 'stock.modele', 'stock.casier', 'stock.designation', 'stock.reference', 'stock.photo', 'stock.retirerPhoto'];
 
   /* ---------- outils ---------- */
   function cle(p) { return String(p.reference || '').trim() || String(p.designation || '').trim(); }
@@ -153,7 +153,7 @@
       if (a.type === 'stock.piece') {
         var np = a.piece;
         m.pieces.push({ rowIndex: null, reference: np.reference || '', designation: np.designation, quantiteStock: np.quantiteStock || 0, seuil: np.seuil || 0,
-          casier: np.casier || '', cotes: '', substitution: '', reperes: '', photo: np.photo || '', partage: false, enAttente: true });
+          casier: np.casier || '', modele: np.modele || '', cotes: '', substitution: '', reperes: '', photo: np.photo || '', partage: false, enAttente: true });
         return;
       }
       if (a.type === 'stock.transferer' && a.mode === 'deplacer') a = Object.assign({}, a, { type: 'stock.supprimerPiece' });
@@ -178,6 +178,7 @@
       else if (a.type === 'stock.reception') memeRef.forEach(function (p) { p.quantiteStock += a.quantite; });
       else if (a.type === 'stock.seuil') memeRef.forEach(function (p) { p.seuil = a.seuil; });
       else if (a.type === 'stock.casier') cible.casier = a.casier;
+      else if (a.type === 'stock.modele') cible.modele = a.nouvelle;
       else if (a.type === 'stock.designation') cible.designation = a.nouvelle;
       else if (a.type === 'stock.reference') { cible.reference = a.nouvelle; cible.partage = false; }
       else if (a.type === 'stock.photo') cible.photo = (a.ajout ? liensPhotos(cible.photo) : []).concat([a.photo]).join('\n');
@@ -206,7 +207,11 @@
     return { site: 'Démonstration', urlScanner: '', casiers: casiers, materiels: [
       { nom: 'Broyeur', pieces: [p(2, 'GFL 952 M9', 'Grille', 6, 3, '2F'), p(3, 'GSM019E4', 'Couteau', 2, 16, '2F'), p(4, 'DFD0019', 'Mousse O', 44, 8, '3A')] },
       { nom: 'Pompe CC', pieces: [p(2, 'PKE 0027', 'Stator', 1, 1, 'E3'), p(3, 'PRO 0023', 'Rotor', 0, 1, 'E3'), p(4, 'PBT.B019', 'Garniture étanche', 2, 1, '')] },
-      { nom: 'Séparateur Bauer', pieces: [p(2, '2003654', 'Grand tamis', 1, 1, '3C'), p(3, '2003611', 'Vis', 2, 1, '3B')] }] };
+      { nom: 'Séparateur Bauer', pieces: [p(2, '2003654', 'Grand tamis', 1, 1, '3C'), p(3, '2003611', 'Vis', 2, 1, '3B')] },
+      { nom: 'Wangen', pieces: [m(p(2, '15145', 'Chaussette', 1, 2, 'Casier I1'), 'KL 50-100'), m(p(3, '11000', 'Rotor KL 50-100', 1, 1, 'Casier H1'), 'KL 50-100'),
+        m(p(4, '16143', 'Chaussette', 5, 2, 'Casier I1'), 'KL 65-110'), m(p(5, '76361A', 'Cardan', 1, 1, ''), 'KL 65-110'), m(p(6, '17283', 'Rotor KL 65-110', 1, 1, 'Casier H1'), 'KL 65-110'),
+        m(p(7, '76361A', 'Cardan', 1, 1, ''), 'KL 65-140'), m(p(8, '11794', 'Rotor KL 65-140', 1, 1, 'Casier G1'), 'KL 65-140'), p(9, '', 'Moto réducteur', 1, 0, 'Casier X2')] }] };
+    function m(x, modele) { x.modele = modele; return x; }
   }
 
   /* ===================================================================
@@ -499,6 +504,55 @@
       }
 
       /* ---------- pièces d'un matériel ---------- */
+      /* ---------- modèle de machine (colonne « Modèle » du Sheet ; ex. Wangen KL 50-100 / KL 65-110 / KL 65-140) ---------- */
+      var COULEURS_MODELE = ['#2f80ed', '#e8a33d', '#27ae60', '#9b51e0', '#eb5757', '#00a3a3'];
+      function normModele(x) {
+        var t = String(x || '').trim().replace(/\s+/g, ' '), m = /^KL\s*-?\s*(\d+)\s*-\s*(\d+)$/i.exec(t);
+        return m ? 'KL ' + m[1] + '-' + m[2] : t;
+      }
+      function modelesDe(mat) {
+        var vus = {};
+        pieces(mat).forEach(function (p) { if (p.modele) vus[p.modele] = (vus[p.modele] || 0) + 1; });
+        return Object.keys(vus).sort(function (a, b) { return a.localeCompare(b, 'fr', { numeric: true }); }).map(function (k) { return { nom: k, n: vus[k] }; });
+      }
+      function couleurModele(nom) {
+        var tous = {}; mats().forEach(function (m) { pieces(m.nom).forEach(function (p) { if (p.modele) tous[p.modele] = 1; }); });
+        var l = Object.keys(tous).sort(function (a, b) { return a.localeCompare(b, 'fr', { numeric: true }); });
+        return COULEURS_MODELE[Math.max(0, l.indexOf(nom)) % COULEURS_MODELE.length];
+      }
+      function badgeModele(p) {
+        if (!p.modele) return null;
+        var c = couleurModele(p.modele);
+        return el('span', { class: 'st-badge st-modele', style: 'background:' + c + '22;color:' + c + ';border:1px solid ' + c, title: 'Va sur ' + p.modele }, [p.modele]);
+      }
+      // autres modèles du même matériel qui utilisent la même référence (« va aussi sur »)
+      function aussiSur(p) {
+        if (!p.reference) return [];
+        var l = [];
+        pieces(p.materiel).forEach(function (x) { if (x !== p && x.reference === p.reference && x.modele && x.modele !== p.modele && l.indexOf(x.modele) < 0) l.push(x.modele); });
+        return l;
+      }
+      function editerModele(p) {
+        var existants = modelesDe(p.materiel).map(function (m) { return m.nom; });
+        var inp = el('input', { type: 'text', value: p.modele || '', placeholder: 'ex. KL 65-110', autocomplete: 'off' });
+        var fermer;
+        function choisir(v) {
+          v = normModele(v);
+          if (v === (p.modele || '')) { fermer(); return; }
+          fermer(); saisir(Object.assign({ type: 'stock.modele', nouvelle: v }, refPiece(p)));
+          PM.toast(v ? 'Modèle : ' + v : 'Modèle retiré');
+        }
+        fermer = modale('Modèle (machine)', (p.designation || p.reference) + ' — sur quelle machine va cette pièce ?', [
+          existants.length ? el('div', { class: 'st-chips' }, existants.map(function (m) {
+            var c = couleurModele(m);
+            return el('button', { class: 'btn-second st-chip' + (m === p.modele ? ' actif' : ''), type: 'button', style: 'border-color:' + c + ';color:' + c, onclick: function () { choisir(m); } }, [m]);
+          })) : null,
+          el('div', { class: 'champ' }, [el('label', {}, ['Autre modèle']), inp]),
+          el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' }, [
+            el('button', { class: 'btn-principal', type: 'button', onclick: function () { choisir(inp.value); } }, ['Enregistrer']),
+            p.modele ? el('button', { class: 'btn-second', type: 'button', onclick: function () { choisir(''); } }, ['Aucun modèle']) : null])]);
+      }
+
       function ecranPieces(racine) {
         var liste = pieces(materiel);
         racine.appendChild(el('div', { class: 'pp-barre' }, [
@@ -508,17 +562,49 @@
         racine.appendChild(el('div', { class: 'st-actions' }, [champ,
           el('button', { class: 'btn-second', type: 'button', onclick: function () { imprimerQr(liste, (T.site ? T.site + ' — ' : '') + materiel); } }, ['🖨 QR codes']),
           el('button', { class: 'btn-second', type: 'button', onclick: ouvrirAjoutPiece }, ['+ Ajouter une pièce'])]));
+        // Modèles (ex. Wangen) : boutons de choix en haut, pièces regroupées par modèle
+        var modeles = modelesDe(materiel), clePref = 'stock_modele_' + S + '_' + materiel;
+        var choixModele = modeles.length ? PM.Prefs.get(clePref, '') : '';
+        if (choixModele && choixModele !== '(aucun)' && !modeles.some(function (m) { return m.nom === choixModele; })) choixModele = '';
+        var barreModeles = null;
+        if (modeles.length) {
+          var sansModele = liste.filter(function (p) { return !p.modele; }).length;
+          barreModeles = el('div', { class: 'st-chips st-chips-modeles' });
+          var choix = [{ v: '', t: 'Tous (' + liste.length + ')' }].concat(modeles.map(function (m) { return { v: m.nom, t: m.nom + ' (' + m.n + ')', c: couleurModele(m.nom) }; }))
+            .concat(sansModele ? [{ v: '(aucun)', t: 'Sans modèle (' + sansModele + ')' }] : []);
+          choix.forEach(function (x) {
+            barreModeles.appendChild(el('button', { class: 'btn-second st-chip' + (x.v === choixModele ? ' actif' : ''), type: 'button',
+              style: x.c ? 'border-color:' + x.c + ';' + (x.v === choixModele ? 'background:' + x.c + ';color:#fff' : 'color:' + x.c) : '',
+              onclick: function () { choixModele = x.v; PM.Prefs.set(clePref, x.v); afficher(); } }, [x.t]));
+          });
+          racine.appendChild(barreModeles);
+        }
         var conteneur = el('div');
         racine.appendChild(conteneur);
         function remplir() {
           conteneur.innerHTML = '';
           var f = norm(filtre);
-          var vues = liste.filter(function (p) { return !f || norm([p.designation, p.reference, p.casier, p.ancienneReference].join(' ')).indexOf(f) >= 0; });
+          var vues = liste.filter(function (p) {
+            if (choixModele === '(aucun)' ? !!p.modele : (choixModele && p.modele !== choixModele)) return false;
+            return !f || norm([p.designation, p.reference, p.casier, p.ancienneReference, p.modele].join(' ')).indexOf(f) >= 0;
+          });
           if (!vues.length) {
             var mm = (T && T.materiels || []).filter(function (x) { return x.nom === materiel; })[0];
             conteneur.appendChild(el('div', { class: 'vide-msg' }, [liste.length ? 'Aucune pièce ne correspond.'
               : (mm && mm.erreur ? 'Les pièces de ce matériel n’ont pas pu être lues (serveur lent).' : 'Aucune pièce enregistrée.'),
               liste.length ? null : el('div', { style: 'margin-top:12px' }, [el('button', { class: 'btn-second', type: 'button', onclick: function () { PM.toast('Rechargement…'); charger(false); } }, ['↻ Recharger le stock'])])]));
+            return;
+          }
+          if (modeles.length && !choixModele) {
+            // « Tous » : un tableau par modèle, dans l'ordre, puis les pièces sans modèle
+            modeles.map(function (m) { return m.nom; }).concat(['']).forEach(function (nom) {
+              var groupe = vues.filter(function (p) { return (p.modele || '') === nom; });
+              if (!groupe.length) return;
+              var c = nom ? couleurModele(nom) : '';
+              conteneur.appendChild(el('h3', { class: 'pp-h3 st-titre-modele', style: c ? 'border-left:5px solid ' + c + ';padding-left:8px;color:' + c : '' },
+                [nom ? '⚙ ' + nom : 'Sans modèle (communes ou non classées)', el('span', { class: 'petit' }, [' · ' + groupe.length + ' pièce' + (groupe.length > 1 ? 's' : '')])]));
+              conteneur.appendChild(tableau(['Référence', 'Désignation', 'Rangement', 'Stock', ''], groupe.map(function (p) { return lignePiece(p, false); }), 'st-pieces st-pieces-casier'));
+            });
             return;
           }
           conteneur.appendChild(tableau(['Référence', 'Désignation', 'Rangement', 'Stock', ''], vues.map(function (p) { return lignePiece(p, false); }), 'st-pieces st-pieces-casier'));
@@ -555,7 +641,7 @@
         var classe = (p.stockBas ? 'st-bas' : '') + (p.enAttente ? ' attente' : '');
         if (avecMateriel) {
           return el('tr', { class: classe }, [
-            el('td', {}, [el('span', {}, [p.designation]), badges[0], badges[1], badges[2],
+            el('td', {}, [el('span', {}, [p.designation]), badgeModele(p), badges[0], badges[1], badges[2],
               el('div', { class: 'st-sous' }, [(p.reference ? 'Réf. ' + p.reference : 'sans référence') + (p.casier ? ' · ' + rangementTexte(p.casier) : '')])]),
             el('td', {}, [p.materiel]), cellQte, actions]);
         }
@@ -1059,6 +1145,7 @@
           var dl = el('dl', { class: 'st-details' });
           [].concat(
             ligne('Désignation', p.designation, function () { editerTexte(p, 'Désignation', 'designation', 'stock.designation', true); }),
+            (p.modele || modelesDe(p.materiel).length) ? ligne('Modèle (machine)', p.modele ? p.modele + (aussiSur(p).length ? ' — même réf. aussi sur ' + aussiSur(p).join(', ') : '') : '', function () { editerModele(p); }) : [],
             ligne('Rangement', p.casier ? rangementTexte(p.casier) : '', function () { editerCasier(p); }),
             ligne('Seuil mini', p.seuil, function () { editerSeuil(p); }),
             ligne('À commander', p.quantiteACommander),
@@ -1252,10 +1339,23 @@
         function champ(lib, i) { return el('div', { class: 'champ' }, [el('label', {}, [lib]), i]); }
         var choixMat = el('select', { class: 'st-select' }, mats().map(function (m) { return el('option', { value: m.nom }, [m.nom]); }));
         choixMat.value = materiel;
-        choixMat.addEventListener('change', function () { materiel = choixMat.value; });
+        // modèle (si ce matériel en a, ex. Wangen) : proposé, prérempli avec le modèle affiché
+        var choixMod = el('select', { class: 'st-select' });
+        function remplirModeles() {
+          choixMod.innerHTML = '';
+          var ms = modelesDe(materiel);
+          choixMod.appendChild(el('option', { value: '' }, ['— aucun modèle —']));
+          ms.forEach(function (m) { choixMod.appendChild(el('option', { value: m.nom }, [m.nom])); });
+          var pref = PM.Prefs.get('stock_modele_' + S + '_' + materiel, '');
+          if (pref && pref !== '(aucun)') choixMod.value = pref;
+          zoneMod.hidden = !ms.length;
+        }
+        var zoneMod = el('div', { class: 'champ' }, [el('label', {}, ['Modèle (machine)']), choixMod]);
+        choixMat.addEventListener('change', function () { materiel = choixMat.value; remplirModeles(); });
+        remplirModeles();
         var fermer = modale('Ajouter une pièce', casierImpose ? 'Rangée dans ' + rangementTexte(casierImpose) : materiel, [
           casierImpose ? champ('Matériel', choixMat) : null,
-          champ('Désignation', c.designation), champ('Référence', c.reference),
+          champ('Désignation', c.designation), champ('Référence', c.reference), zoneMod,
           el('div', { class: 'pp-deux' }, [champ('Quantité de départ', c.quantite), champ('Seuil', c.seuil)]),
           champ('Rangement (casier ou tiroir)', c.casier.noeud), champ('Photo (facultatif)', c.photo),
           el('p', { class: 'petit' }, ['Même référence qu’une pièce existante (ce site ou l’autre) = stock partagé automatiquement. Côtes, Substitution et Repères restent modifiables dans le Google Sheets du site.']),
@@ -1267,6 +1367,7 @@
           var ref = c.reference.value.trim().replace(/,/g, '.'); // virgules -> points (choix d'Alex)
           if (ref && pieces(materiel).some(function (p) { return p.reference === ref; }) && !confirm('Cette référence existe déjà dans ' + materiel + '. L’ajouter quand même ?')) return;
           var piece = { designation: c.designation.value.trim(), reference: ref, quantiteStock: q, seuil: s, casier: c.casier.valeur() };
+          if (!zoneMod.hidden && choixMod.value) piece.modele = choixMod.value;
           var fichier = c.photo.files[0];
           (fichier ? (PM.attente ? PM.attente(redimensionner(fichier, 1024, 0.7), 'Préparation de la photo…') : redimensionner(fichier, 1024, 0.7)) : Promise.resolve('')).then(function (data) {
             if (data) piece.photo = data;

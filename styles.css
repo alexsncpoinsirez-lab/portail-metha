@@ -1253,3 +1253,11 @@ body.futur .pm-maj { background: rgba(10,18,30,.92); color: var(--texte); border
 /* Contrôle des données : étapes non terminées */
 .st-soucis { border-left: 4px solid var(--attente); background: color-mix(in srgb, var(--attente) 8%, var(--surface)); }
 .st-soucis .st-emplacement { font-size: 13px; }
+
+/* ---- Modèles de machine (ex. Wangen KL 50-100 / KL 65-110 / KL 65-140) ---- */
+.st-chips-modeles { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+.st-chips-modeles .st-chip { flex: 0 0 auto; padding: 0 14px; min-height: 38px; }
+.st-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 12px; }
+.st-chips .st-chip { flex: 0 0 auto; padding: 0 14px; }
+.st-titre-modele { margin: 18px 0 6px; }
+.st-badge.st-modele { font-weight: 700; }
