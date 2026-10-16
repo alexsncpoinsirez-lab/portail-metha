@@ -23,11 +23,10 @@
 
   /* ---------- outils ---------- */
   function cle(p) { return String(p.reference || '').trim() || String(p.designation || '').trim(); }
-  // Clé de partage (même règle que le serveur, stCleCommune_) : NON = jamais partagée ; OUI sans référence = désignation.
-  // Données d'un ancien serveur (pas de champ « commun ») : la référence, comme avant.
+  // Clé de partage (même règle que le serveur, stCleCommune_) : NON = jamais partagée ; sans référence = jamais partagée.
+  // La référence est le SEUL lien entre deux lignes (choix d'Alex 16/10).
   function cleCommune(p) {
     if (p.commun === false) return '';
-    if (p.commun === true) return String(p.reference || '').trim() || String(p.designation || '').trim();
     return String(p.reference || '').trim();
   }
   // Commandes : référence « 00123 » = 123 (Sheets a pu la transformer en nombre) ; sans référence : matériel + désignation
@@ -920,13 +919,24 @@
           var orph = r.sansCorrespondance || [];
           if (orph.length) {
             zoneR.appendChild(el('p', { class: 'petit st-orphelines' }, [el('b', {}, ['⚠ ' + orph.length + ' ligne' + (orph.length > 1 ? 's' : '') + ' cochée' + (orph.length > 1 ? 's' : '') + ' OUI sans équivalent sur l’autre site']),
-              ' — à corriger dans le Sheet (même référence des deux côtés, ou même désignation exacte quand il n’y a pas de référence) :']));
+              ' — à corriger dans le Sheet (même référence des deux côtés) :']));
             orph.forEach(function (o) {
               var txt = o.ou + ', ligne ' + o.ligne + ' : ' + (o.designation || o.reference) + (o.reference ? ' (' + o.reference + ')' : ' (sans référence)');
               var pistes = (o.pistes || []).map(function (q) { return q.ou + ' l.' + q.ligne + ' « ' + (q.designation || q.reference) + ' »' + (q.reference ? ' (' + q.reference + ')' : '') + (q.commun === 'NON' ? ' — marquée NON' : ''); });
               zoneR.appendChild(el('div', { class: 'st-emplacement' }, [txt, pistes.length ? el('div', { class: 'petit' }, ['↳ ressemble à : ' + pistes.join(' ; ')]) : null]));
             });
           }
+          var sansRef = r.sansReference || [];
+          if (sansRef.length) {
+            zoneR.appendChild(el('p', { class: 'petit st-orphelines' }, [el('b', {}, ['⚠ ' + sansRef.length + ' ligne' + (sansRef.length > 1 ? 's' : '') + ' cochée' + (sansRef.length > 1 ? 's' : '') + ' OUI mais sans référence']),
+              ' — elles ne peuvent pas être communes : ajoute la référence dans le Sheet (la même sur les deux sites).']));
+            sansRef.forEach(function (o) {
+              var pistes = (o.pistes || []).map(function (q) { return q.ou + ' l.' + q.ligne + ' : réf. ' + q.reference; });
+              zoneR.appendChild(el('div', { class: 'st-emplacement' }, [o.ou + ', ligne ' + o.ligne + ' : ' + o.designation,
+                pistes.length ? el('div', { class: 'petit' }, ['↳ même désignation avec une référence : ' + pistes.join(' ; ')]) : null]));
+            });
+          }
+          if ((r.retirees || []).length) zoneR.appendChild(el('p', { class: 'petit' }, ['Retiré du stock commun (ne correspond plus à aucune référence) : ' + r.retirees.map(function (x) { return x.reference; }).join(', ')]));
         }
         var btn = el('button', { class: 'btn-principal', type: 'button', onclick: function () {
           if (!confirm('Mettre en commun les pièces présentes sur les deux sites ?\nMême quantité et même seuil sur toutes leurs lignes (la ligne modifiée le plus récemment fait foi). Le rangement n’est pas touché.')) return;
@@ -938,7 +948,7 @@
           })['catch'](function (e) { btn.disabled = false; btn.textContent = '🔗 Mettre en commun maintenant'; PM.toast('Impossible : ' + e.message, 5000); });
         } }, ['🔗 Mettre en commun maintenant']);
         d.appendChild(el('b', {}, ['Pièces communes aux deux sites']));
-        d.appendChild(el('p', { class: 'petit' }, ['La colonne « Commun » du Sheet décide : NON = jamais partagée ; OUI (ou vide) avec une référence = partagée avec toute ligne de même référence ; OUI sans référence = partagée avec la ligne de même désignation exacte. Même quantité et même seuil partout (le rangement reste propre à chaque site). Les lignes en écart sont corrigées, l’historique le note (motif « Mise en commun »). Un contrôle de nuit refait la même chose et t’envoie un mail s’il a corrigé quelque chose.']));
+        d.appendChild(el('p', { class: 'petit' }, ['La colonne « Commun » du Sheet décide : NON = jamais partagée ; OUI (ou vide) avec une référence = partagée avec toute ligne de même référence. Sans référence, une pièce n’est jamais partagée. Même quantité et même seuil partout (le rangement reste propre à chaque site). Les lignes en écart sont corrigées, l’historique le note (motif « Mise en commun »). Un contrôle de nuit refait la même chose et t’envoie un mail s’il a corrigé quelque chose.']));
         d.appendChild(btn); d.appendChild(zoneR);
         if (!modeDemo) api('stock.communRapport', {}, 60000).then(function (j) { rapport(j.rapport); })['catch'](function () {});
         return d;
@@ -968,7 +978,7 @@
           choixSite.addEventListener('change', remplirMat);
           choixMat.addEventListener('change', function () { nouveauMat.hidden = choixMat.value !== '__nouveau'; if (!nouveauMat.hidden) setTimeout(function () { nouveauMat.focus(); }, 30); });
           remplirMat();
-          var peutCopier = !!cleCommune(p); // NON = jamais commune ; OUI sans référence = commune par la désignation
+          var peutCopier = !!cleCommune(p); // NON ou sans référence = jamais commune
           var mode = peutCopier ? 'copier' : 'deplacer';
           var chipCopier = el('button', { type: 'button', class: 'st-chip' + (mode === 'copier' ? ' actif' : ''), disabled: peutCopier ? null : 'disabled', onclick: function () { mode = 'copier'; maj(); } }, ['Copier (commune aux deux)']);
           var chipDeplacer = el('button', { type: 'button', class: 'st-chip' + (mode === 'deplacer' ? ' actif' : ''), onclick: function () { mode = 'deplacer'; maj(); } }, ['Déplacer (retirée d’ici)']);
