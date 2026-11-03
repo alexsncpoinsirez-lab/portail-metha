@@ -1261,3 +1261,56 @@ body.futur .pm-maj { background: rgba(10,18,30,.92); color: var(--texte); border
 .st-chips .st-chip { flex: 0 0 auto; padding: 0 14px; }
 .st-titre-modele { margin: 18px 0 6px; }
 .st-badge.st-modele { font-weight: 700; }
+
+/* ---- Analyses digestat : onglets + tableau « Dernières valeurs » (03/11/2026) ---- */
+.an-onglets { margin-top: 4px; }
+.an-onglets button { font-size: 13px; padding: 0 4px; line-height: 1.15; }
+.an-onglet-vide { opacity: .5; }
+.an-m-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.an-m-table th { text-align: left; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--texte-2); padding: 0 6px 8px; border-bottom: 1px solid var(--bord); font-weight: 700; vertical-align: bottom; }
+.an-m-table td { padding: 9px 6px; border-bottom: 1px solid var(--bord); vertical-align: middle; }
+.an-m-table .an-m-param { position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 104px; max-width: 170px; }
+.an-nom-court { display: none; }
+@media (max-width: 560px) {
+  .an-nom-long { display: none; } .an-nom-court { display: inline; }
+  .an-m-table th, .an-m-table td { padding-left: 4px; padding-right: 4px; }
+  .an-m-cuve { min-width: 60px; }
+  .an-m-table th { font-size: 10px; letter-spacing: 0; }
+  .an-m-table .an-m-param { min-width: 96px; }
+  .an-m-lib { font-size: 12.5px; }
+  .an-m-chiffre { font-size: 14px; gap: 4px; }
+  body.futur .an-m-chiffre { font-size: 12.5px; }
+}
+.an-voir-tout { width: 100%; margin-top: 10px; }
+body.futur .an-m-table .an-m-param { background: #0e1622; }
+.an-m-cuve { min-width: 86px; }
+.an-m-nom { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.an-m-nom .an-pastille { display: inline-block; }
+.an-m-date { display: block; font-size: 10.5px; font-weight: 600; text-transform: none; letter-spacing: 0; margin-top: 2px; }
+.an-m-lib { display: block; font-weight: 650; line-height: 1.2; }
+.an-m-unite { display: block; font-size: 11px; color: var(--texte-2); }
+.an-m-ligne { cursor: pointer; }
+.an-m-ligne:hover td { background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+body.futur .an-m-ligne:hover td { background: color-mix(in srgb, var(--neon) 5%, #0e1622); }
+.an-m-ligne:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.an-m-ligne.choisi td { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.an-m-ligne.choisi .an-m-param { box-shadow: inset 3px 0 0 var(--accent); }
+body.futur .an-m-ligne.choisi td { background: color-mix(in srgb, var(--neon) 9%, #0e1622); }
+body.futur .an-m-ligne.choisi .an-m-param { box-shadow: inset 3px 0 0 var(--neon); }
+.an-m-val { white-space: nowrap; }
+.an-m-chiffre { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+body.futur .an-m-chiffre { font-family: var(--mono); font-size: 13.5px; }
+.an-m-rien { color: var(--texte-2); }
+.an-m-sous { display: flex; flex-direction: column; gap: 1px; margin-top: 2px; }
+.an-m-evol, .an-m-ancien { font-size: 10.5px; font-weight: 650; color: var(--texte-2); }
+.an-m-evol.monte, .an-m-evol.baisse { color: var(--texte); }
+.an-etat-pt { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--texte-2); vertical-align: middle; margin-right: 4px; }
+.an-m-chiffre .an-etat-pt { margin-right: 0; }
+.an-etat-pt.ok { background: var(--ok); }
+.an-etat-pt.att { background: var(--attente); }
+.an-etat-pt.alerte { background: var(--alerte); }
+.an-m-legende { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; }
+.an-m-legende span { display: flex; align-items: center; gap: 2px; }
+.an-aide { margin: 8px 0 0; }
+.analyses .an-zone-ok { fill: var(--ok); opacity: .10; }
+.an-legende-zone { background: color-mix(in srgb, var(--ok) 25%, transparent) !important; border: 1px solid color-mix(in srgb, var(--ok) 60%, transparent); }
