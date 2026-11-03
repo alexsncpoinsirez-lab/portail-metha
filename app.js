@@ -400,6 +400,7 @@
     bougie: '<path d="M12 2v3M9 5h6v4H9zM10 9h4v5h-4zM12 14v4M10 18h4M11 21h2"/>',
     thermo: '<path d="M10 14.5V5a2 2 0 1 1 4 0v9.5a4 4 0 1 1-4 0zM12 9v7"/>',
     filtre: '<path d="M4 5h16l-6 7v6l-4 2v-8z"/>',
+    compresseur: '<rect x="3" y="13" width="13" height="7" rx="2"/><rect x="5" y="7" width="4" height="6" rx="1"/><rect x="11" y="9" width="3.5" height="4" rx="1"/><circle cx="19.5" cy="16.5" r="2.5"/><path d="M6 4h2M12 6h1.5"/>',
     agitation: '<path d="M12 3v18M12 12c-4 0-6-2-7-4M12 12c4 0 6 2 7 4M5 21h14"/>',
     stock: '<path d="M3 8l9-5 9 5v10l-9 5-9-5zM3 8l9 5 9-5M12 13v10M7.5 5.5l9 5"/>',
     pompe: '<circle cx="10" cy="13" r="5.5"/><circle cx="10" cy="13" r="1.6"/><path d="M14 8.5h6v4M4.5 21h11M10 18.5V21"/>',
@@ -648,7 +649,7 @@
         corps.appendChild(el('p', { class: 'petit', style: 'margin-top:10px;font-weight:700' }, ['Saisies refusées par le serveur (' + refusees.length + ')']));
         refusees.forEach(function (x) {
           var s = site(x.siteId), p = x.payload || {};
-          var NOMS = { reponse: 'Ronde', finRonde: 'Fin de ronde', message: 'Message', nh3: 'Suivi NH3', bougies: 'Suivi Bougies', agitation: 'Hauteur agitation', pompes: 'Suivi des pompes',
+          var NOMS = { reponse: 'Ronde', finRonde: 'Fin de ronde', message: 'Message', nh3: 'Suivi NH3', clarke: 'Suivi Charbon Clarke', bougies: 'Suivi Bougies', agitation: 'Hauteur agitation', pompes: 'Suivi des pompes',
             stock: 'Stock pièces', filtration: 'Filtration', taches: 'Tâches', statut: 'Tâches (colonne)', operateur: 'Tâches (opérateur)', site: 'Tâches (équipe)', photo: 'Photo' };
           var t = String(p.type || '?');
           var quoi = (NOMS[t] || NOMS[t.split('.')[0]] || t) + (t.indexOf('.') > 0 ? ' (' + t.split('.')[1] + ')' : '') + (p.libelle ? ' · ' + p.libelle : '') + (p.zone ? ' — ' + p.zone : '');

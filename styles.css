@@ -1314,3 +1314,28 @@ body.futur .an-m-chiffre { font-family: var(--mono); font-size: 13.5px; }
 .an-aide { margin: 8px 0 0; }
 .analyses .an-zone-ok { fill: var(--ok); opacity: .10; }
 .an-legende-zone { background: color-mix(in srgb, var(--ok) 25%, transparent) !important; border: 1px solid color-mix(in srgb, var(--ok) 60%, transparent); }
+
+/* ---------- Suivi Charbon Clarke (réutilise les styles .nh3) ---------- */
+.clarke .ck-comp-body { fill: url(#ckMetalGrad); stroke: var(--metal-edge); stroke-width: 2.5; }
+.clarke .ck-etage { fill: var(--metal-2); stroke: var(--metal-edge); stroke-width: 2; }
+.clarke .ck-etage-tete { fill: var(--metal-3); stroke: var(--metal-edge); stroke-width: 1.5; }
+.clarke .ck-etage-txt { font-family: var(--mono, monospace); font-weight: 700; font-size: 16px; fill: #fff; text-anchor: middle; opacity: .9; }
+.clarke .ck-moteur { fill: var(--metal-3); stroke: var(--metal-edge); stroke-width: 2.5; }
+.clarke .ck-moteur-axe { fill: var(--metal-1); stroke: var(--metal-edge); stroke-width: 1.5; }
+.clarke .ck-comp-txt { font-family: var(--mono, monospace); font-weight: 700; font-size: 10.5px; letter-spacing: .12em; fill: var(--texte-2); text-anchor: middle; }
+.clarke .ck-compresseur image { filter: drop-shadow(0 6px 10px rgba(0,0,0,.35)); }
+body.futur .clarke .ck-compresseur image { filter: drop-shadow(0 0 14px rgba(56,182,255,.35)) drop-shadow(0 6px 10px rgba(0,0,0,.5)); }
+.clarke .ck-comp-txt2 { font-family: var(--mono, monospace); font-size: 10.5px; letter-spacing: .08em; fill: #fff; text-anchor: middle; opacity: .75; }
+.clarke .ck-pied { fill: var(--metal-3); stroke: var(--metal-edge); stroke-width: 1.5; }
+.clarke .ck-sous { font-size: 11px; fill: var(--texte-2); }
+body.futur .clarke .ck-moteur { filter: drop-shadow(0 0 6px var(--neon)); }
+.ck-cuves { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .ck-cuves { grid-template-columns: minmax(0, 1fr); } }
+.ck-cuve { min-width: 0; }
+.ck-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 6px 0 10px; }
+.ck-kpi { padding: 8px 6px; border-radius: 10px; background: var(--surface-2); text-align: center; }
+.ck-kpi-val { font-family: var(--mono, monospace); font-size: 17px; font-weight: 600; line-height: 1.1; overflow-wrap: anywhere; }
+.ck-kpi-lbl { font-size: 10px; color: var(--texte-2); margin-top: 3px; letter-spacing: .04em; text-transform: uppercase; overflow-wrap: anywhere; }
+body.futur .ck-kpi { background: rgba(255,255,255,.04); border: 1px solid var(--bord); }
+.ck-remarque { max-width: 220px; white-space: normal !important; font-size: 12px; color: var(--texte-2); }
+.ck-nouveau-type input { flex: 1; min-width: 0; }

@@ -55,6 +55,7 @@ var PORTAIL_CONFIG = {
           url: 'https://docs.google.com/forms/d/1_xC0e7xDNlrgE_1ww5FNLta0KF4CEoR1YNwzTqzgJMQ/viewform'
         },
         { id: 'nh3',         nom: 'Suivi NH3',            description: 'Analyses NH3 et charbon actif',      icone: 'filtre',      type: 'interne', module: 'nh3' },
+        { id: 'clarke',      nom: 'Suivi Charbon Clarke', description: 'Remplacements de charbon — cuve 1, compresseur 2 étages, cuve 2', icone: 'compresseur', type: 'interne', module: 'clarke' },
         { id: 'analyses-arr', nom: 'Analyses digestat', description: 'pH, AOV/TAC, acides gras, oligo-éléments, MS — Arraincourt', icone: 'analyse', type: 'interne', module: 'analyses' },
         { id: 'pompes-arr', nom: 'Suivi des pompes', description: 'Remplacement de pièces — pompes, broyeurs, séparateur', icone: 'pompe', type: 'interne', module: 'pompes' },
         { id: 'stock-arr', nom: 'Stock pièces', description: 'Pièces détachées : quantités, casiers, à commander, QR codes', icone: 'stock', type: 'interne', module: 'stock' }
