@@ -1,15 +1,16 @@
-/* Service worker : garde l'appli sur le téléphone -> ouverture instantanée, même sans réseau.
-   Pour publier une mise à jour : changer le numéro de VERSION ci-dessous. */
-var VERSION = 'portail-metha-v69';
-var FICHIERS = ['./', 'index.html', 'styles.css', 'config.js', 'app.js', 'rondes.js', 'nh3.js', 'clarke.js', 'bougies.js', 'agitation.js', 'analyses.js', 'pompes.js', 'qrcode.js', 'stock.js', 'filtration.js', 'taches.js', 'intro.js', 'icons/intro-logo.png', 'icons/intro-voix.mp3', 'icons/logo-prodeval.png', 'icons/compresseur-clarke.png', 'icons/logo-wangen.png', 'icons/logo-vogelsang.png', 'icons/logo-bauer.png', 'icons/alu.jpg', 'icons/marques/new-holland.png', 'icons/marques/case-ih.png', 'icons/marques/john-deere.png', 'icons/marques/fendt.png', 'icons/marques/manitou.png', 'icons/marques/jcb.png', 'icons/marques/artec.png',
-  'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
+/* Service worker : garde l'appli sur l'appareil -> ouverture instantanée, même sans réseau.
+   Pour publier une mise à jour : augmenter le numéro de VERSION ci-dessous. */
+var VERSION = 'pointage-bl-v24';
+var FICHIERS = ['./', 'index.html', 'styles.css', 'config.js', 'core.js', 'pointage.js',
+  'pdf.min.js', 'pdf.worker.min.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png',
+  'photo.html', 'photo.js', 'photo.webmanifest', 'photo-192.png', 'photo-512.png',
+  'logo-ackermann.png', 'logo-tilly-manitou.png', 'logo-haag.png', 'logo-mecavista.png', 'logo-manutone.png', 'logo-farminove.png'];
+// le lecteur PDF n'est pas indispensable : s'il manque, l'appli prend le lecteur PDF de secours (cdnjs)
+var ESSENTIELS = ['./', 'index.html', 'styles.css', 'config.js', 'core.js', 'pointage.js'];
 
-// Fichiers indispensables : s'il en manque un, la mise à jour attend. Les images peuvent manquer sans tout bloquer.
-var ESSENTIELS = ['./', 'index.html', 'styles.css', 'config.js', 'app.js', 'rondes.js', 'nh3.js', 'clarke.js', 'bougies.js', 'agitation.js', 'analyses.js', 'pompes.js', 'qrcode.js', 'stock.js', 'filtration.js', 'taches.js'];
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(VERSION).then(function (c) {
     return Promise.all(FICHIERS.map(function (f) {
-      // cache: 'reload' -> toujours la version fraîche de GitHub (pas un mélange ancien / nouveau)
       var p = fetch(new Request(f, { cache: 'reload' })).then(function (r) {
         if (!r.ok) throw new Error(f + ' : ' + r.status);
         return c.put(f, r);
@@ -27,8 +28,8 @@ self.addEventListener('fetch', function (e) {
   var url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   var polices = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
-  if (url.origin !== self.location.origin && !polices) return; // serveurs Apps Script : jamais en cache ici
-  // Affiche tout de suite la version gardée, et la met à jour en arrière-plan.
+  if (url.origin !== self.location.origin && !polices) return; // serveur Apps Script : jamais en cache ici
+  // Version gardée tout de suite, mise à jour en arrière-plan
   e.respondWith(caches.open(VERSION).then(function (c) {
     return c.match(e.request, { ignoreSearch: true }).then(function (enCache) {
       var reseau = fetch(e.request).then(function (r) { if (r && r.ok) c.put(e.request, r.clone()); return r; })
