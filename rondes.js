@@ -82,8 +82,34 @@
   // Lien vers une photo : seulement http(s) (jamais « javascript: » venu d'une cellule du Sheet)
   function lienSur(u) { return /^https?:\/\//i.test(String(u || '').trim()) ? String(u).trim() : null; }
   function visionneuse(src) {
-    var v = el('div', { class: 'visionneuse', onclick: function () { v.remove(); } }, [el('img', { src: src, alt: '' })]);
+    var m = estVideo(src)
+      ? el('video', { src: lienVideo(src), autoplay: 'autoplay', loop: 'loop', muted: 'muted', playsinline: 'playsinline', controls: 'controls' })
+      : el('img', { src: src, alt: '' });
+    if (m.tagName === 'VIDEO') m.muted = true;
+    var v = el('div', { class: 'visionneuse', onclick: function (e) { if (e.target !== m) v.remove(); } }, [m]);
     document.body.appendChild(v);
+  }
+  // Vidéo de référence : lien marqué « video: » par le serveur, ou fichier .mp4/.webm/.mov
+  function estVideo(u) { return /^video:/i.test(u) || /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(u); }
+  function lienVideo(u) { return String(u).replace(/^video:/i, ''); }
+  // Une vidéo par lien, gardée tant qu'on reste sur le même point : elle ne redémarre pas
+  // à chaque toucher d'un paramètre (l'écran est redessiné), et s'arrête au point suivant.
+  var videosPoint = { cle: null, el: {} };
+  function videoReference(cle, u, alt, surErreur) {
+    if (videosPoint.cle !== cle) {
+      Object.keys(videosPoint.el).forEach(function (k) { try { videosPoint.el[k].pause(); } catch (e) {} });
+      videosPoint = { cle: cle, el: {} };
+    }
+    if (!u) return null;
+    var v = videosPoint.el[u];
+    if (!v) {
+      v = el('video', { src: lienVideo(u), autoplay: 'autoplay', loop: 'loop', muted: 'muted', playsinline: 'playsinline', preload: 'auto',
+        'aria-label': alt, onclick: function () { visionneuse(u); }, onerror: surErreur });
+      v.muted = true; // obligatoire pour la lecture automatique sur téléphone
+      videosPoint.el[u] = v;
+    }
+    setTimeout(function () { try { var r = v.play(); if (r && r['catch']) r['catch'](function () {}); } catch (e) {} }, 0);
+    return v;
   }
 
   window.MODULES.rondes = {
@@ -240,7 +266,10 @@
           // autant de photos que de paramètres : chaque photo porte le nom de son paramètre (même ordre)
           var legendes = p.notes && p.notes.length > 1 && p.notes.length === refs.length;
           carte.appendChild(el('div', { class: 'ronde-refs' + (refs.length > 1 ? ' multiples' : '') + (legendes ? ' legendees' : '') }, refs.map(function (u, k) {
-            var img = el('img', { src: u, alt: legendes ? p.notes[k] : 'Photo de référence', loading: 'lazy', onclick: function () { visionneuse(u); }, onerror: function () { (legendes ? this.parentNode : this).remove(); } });
+            var alt = legendes ? p.notes[k] : 'Photo de référence';
+            var img = estVideo(u)
+              ? videoReference(cle, u, alt, function () { var b = legendes ? this.parentNode : this; if (b && b.parentNode) b.parentNode.removeChild(b); })
+              : el('img', { src: u, alt: alt, loading: 'lazy', onclick: function () { visionneuse(u); }, onerror: function () { (legendes ? this.parentNode : this).remove(); } });
             if (!legendes) return img;
             var nc = x.nonConformes.indexOf(p.notes[k]) >= 0;
             return el('figure', { class: 'ronde-ref' + (nc ? ' nc' : '') }, [img, el('figcaption', {}, [p.notes[k]])]);
@@ -319,6 +348,7 @@
         }
         x.relance = false;
         if (!estAlerte) x.nonConformes = [];
+        videoReference(null, '', '', null); // coupe la vidéo du point qu'on quitte
         if (!R.debut) R.debut = new Date().toISOString();
         x.reponse = r; x.horodatage = new Date().toISOString();
         vibrerEtBip();
