@@ -24,6 +24,7 @@
       { zone: 'Supervision', libelle: 'Contrôle T° cuves', notes: ['45°'], reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photos: [], derniereAlerte: true, derniereReponseAlerte: 'Non conforme' },
       { zone: 'Supervision', libelle: 'Contrôle valeurs gaz avant charbon', notes: ['CH4 50-54%', 'O2 0,6%', 'H2S réagir si la valeur est au dessus de 250 ppm'], reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photos: [] },
       { zone: 'Incorporation', libelle: 'Contrôle usure vis verticale', notes: [], reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photos: [] },
+      { zone: 'Salle cogé', libelle: 'Contrôle fonctionnement groupe froid +', notes: ['T1° 2 à 5', 'T2° 18 à 20', 'P1° 2,5 à 3 bar', 'P2° 2 bar'], reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photos: [], derniereAlerte: true, derniereReponseAlerte: 'Non conforme', derniersNonConformes: ['T1° 2 à 5'], derniereDate: '04/11 09:22', dernierAgent: 'Mathieu' },
       { zone: 'Incorporation', libelle: 'Nettoyage des fonds poussant', notes: [], reponses: ['Effectué', 'Reporté'], reponsesAlerte: ['Reporté'], photos: [], derniereAlerte: true, derniereReponseAlerte: 'Reporté' }
     ]
   };
@@ -198,30 +199,51 @@
         ]));
 
         var p = config.points[index], cle = cleDuPoint(p);
-        var x = R.reponses[cle] || (R.reponses[cle] = { reponse: null, note: undefined, photos: [], idSaisie: PM.uid(), envoye: false });
-        if (x.note === undefined) x.note = p.notes && p.notes.length === 1 ? p.notes[0] : null;
+        var x = R.reponses[cle] || (R.reponses[cle] = { reponse: null, photos: [], idSaisie: PM.uid(), envoye: false });
+        ncDe(p, x);
+        var avant = p.derniersNonConformes || [];
 
         var carte = el('div', { class: 'bandeau ronde-carte' });
-        if (p.derniereAlerte) carte.appendChild(el('div', { class: 'ronde-badge-alerte' }, ['⚠ Dernière fois : ' + p.derniereReponseAlerte]));
+        if (p.derniereAlerte) carte.appendChild(el('div', { class: 'ronde-badge-alerte' }, [
+          '⚠ Dernière fois' + (p.derniereDate ? ' (' + p.derniereDate + (p.dernierAgent ? ' · ' + p.dernierAgent : '') + ')' : '') + ' : ' + p.derniereReponseAlerte,
+          avant.length ? el('div', { class: 'ronde-badge-detail' }, ['Non conforme : ' + avant.join(' · ')]) : null]));
         carte.appendChild(el('div', { class: 'ronde-zone' }, [p.zone]));
         carte.appendChild(el('h2', { class: 'ronde-libelle' }, [p.libelle]));
 
-        // Notes cliquables (la note choisie part en commentaire / détail de l'alerte)
+        // Paramètres (textes entre parenthèses du libellé) : on touche ceux qui ne sont PAS conformes.
+        // En rouge pâle : jugé non conforme au dernier contrôle.
         if (p.notes && p.notes.length) {
-          var notes = el('div', { class: 'ronde-notes' });
+          var notes = el('div', { class: 'ronde-notes' + (x.relance ? ' ronde-notes-relance' : '') });
+          notes.appendChild(el('div', { class: 'ronde-notes-titre' }, [p.notes.length > 1
+            ? 'Paramètres à contrôler — touche celui ou ceux qui ne sont pas conformes'
+            : 'Paramètre à contrôler — touche-le s’il n’est pas conforme']));
           p.notes.forEach(function (n) {
-            notes.appendChild(el('div', { class: 'ronde-note' + (x.note === n ? ' selectionnee' : ''), onclick: function () {
-              x.note = x.note === n ? null : n; sauver(); afficher();
-            } }, [n]));
+            var choisi = x.nonConformes.indexOf(n) >= 0, ancien = avant.indexOf(n) >= 0;
+            notes.appendChild(el('div', { class: 'ronde-note' + (choisi ? ' selectionnee' : '') + (ancien ? ' derniere-nc' : ''), role: 'button', 'aria-pressed': choisi ? 'true' : 'false', onclick: function () {
+              var k = x.nonConformes.indexOf(n);
+              if (k >= 0) x.nonConformes.splice(k, 1); else x.nonConformes.push(n);
+              x.relance = false; sauver(); afficher();
+            } }, [
+              el('span', { class: 'ronde-note-coche' }, [choisi ? '✖' : '']),
+              el('span', { class: 'ronde-note-texte' }, [n]),
+              choisi ? el('span', { class: 'ronde-note-etat' }, ['Non conforme'])
+                : ancien ? el('span', { class: 'ronde-note-etat' }, ['⚠ Non conforme au dernier contrôle']) : null
+            ]));
           });
+          if (x.relance) notes.appendChild(el('div', { class: 'ronde-notes-aide' }, ['Quel paramètre n’est pas conforme ? Touche-le, ou réappuie sur « ' + x.relance + ' » pour valider sans préciser.']));
           carte.appendChild(notes);
         }
 
         // Photos de référence
         var refs = (p.photos || []).filter(function (u) { return u.indexOf('ID_DU_FICHIER') < 0; });
         if (refs.length) {
-          carte.appendChild(el('div', { class: 'ronde-refs' + (refs.length > 1 ? ' multiples' : '') }, refs.map(function (u) {
-            return el('img', { src: u, alt: 'Photo de référence', loading: 'lazy', onclick: function () { visionneuse(u); }, onerror: function () { this.remove(); } });
+          // autant de photos que de paramètres : chaque photo porte le nom de son paramètre (même ordre)
+          var legendes = p.notes && p.notes.length > 1 && p.notes.length === refs.length;
+          carte.appendChild(el('div', { class: 'ronde-refs' + (refs.length > 1 ? ' multiples' : '') + (legendes ? ' legendees' : '') }, refs.map(function (u, k) {
+            var img = el('img', { src: u, alt: legendes ? p.notes[k] : 'Photo de référence', loading: 'lazy', onclick: function () { visionneuse(u); }, onerror: function () { (legendes ? this.parentNode : this).remove(); } });
+            if (!legendes) return img;
+            var nc = x.nonConformes.indexOf(p.notes[k]) >= 0;
+            return el('figure', { class: 'ronde-ref' + (nc ? ' nc' : '') }, [img, el('figcaption', {}, [p.notes[k]])]);
           })));
         }
 
@@ -257,12 +279,23 @@
         vue.appendChild(carte);
       }
 
+      // Paramètres cochés non conformes (reprend l'ancienne « note » d'une ronde commencée avant la mise à jour)
+      function ncDe(p, x) {
+        if (!Array.isArray(x.nonConformes)) x.nonConformes = x.note && (p.notes || []).indexOf(x.note) >= 0 ? [x.note] : [];
+        delete x.note;
+        return x.nonConformes;
+      }
+      // envoyés seulement si la réponse est une alerte (« Conforme » = tout est bon)
+      function ncEnvoyes(p, x) {
+        return p.reponsesAlerte.indexOf(x.reponse) >= 0 ? ncDe(p, x).filter(function (n) { return (p.notes || []).indexOf(n) >= 0; }) : [];
+      }
+
       function payload(i) {
         var p = config.points[i], x = rep(i);
         return {
           type: 'reponse', idSaisie: x.idSaisie, agent: R.agent || '', horodatage: x.horodatage,
           zone: p.zone, libelle: p.libelle, reponse: x.reponse, reponsesAlerte: p.reponsesAlerte,
-          commentaire: x.note || '', photos: x.photosNouvelles ? (x.photos || []) : [],
+          commentaire: ncEnvoyes(p, x).join(' | '), nonConformes: ncEnvoyes(p, x), photos: x.photosNouvelles ? (x.photos || []) : [],
           photoNomFichier: p.libelle.replace(/[^a-z0-9]+/gi, '_').toLowerCase()
         };
       }
@@ -273,7 +306,19 @@
       }
 
       function repondre(i, r) {
-        var x = rep(i);
+        var x = rep(i), p = config.points[i];
+        ncDe(p, x);
+        var estAlerte = p.reponsesAlerte.indexOf(r) >= 0, nbNotes = (p.notes || []).length;
+        if (estAlerte && nbNotes === 1 && !x.nonConformes.length) x.nonConformes = [p.notes[0]]; // un seul paramètre : c'est lui
+        if (estAlerte && nbNotes > 1 && !x.nonConformes.length && x.relance !== r) {
+          // plusieurs paramètres et aucun choisi : on demande lequel (2e appui = valider sans préciser)
+          x.relance = r; sauver(); afficher();
+          if (navigator.vibrate) navigator.vibrate([60, 60, 60]);
+          var bloc = document.querySelector('.ronde-notes'); if (bloc && bloc.scrollIntoView) bloc.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+        x.relance = false;
+        if (!estAlerte) x.nonConformes = [];
         if (!R.debut) R.debut = new Date().toISOString();
         x.reponse = r; x.horodatage = new Date().toISOString();
         vibrerEtBip();
