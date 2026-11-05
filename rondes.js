@@ -147,7 +147,7 @@
       var modeDemo = !ctx.apiUrl;
       var CLE_CFG = 'ronde2_cfg_' + ctx.site.id;
       var CLE_BROUILLON = 'ronde2_brouillon_' + ctx.site.id;
-      var config = null, R = null, onglet = 'ronde', index = 0, enFin = false, recapFin = null;
+      var config = null, R = null, onglet = 'ronde', index = 0, enFin = false, recapFin = null, montrerAgent = false;
 
       vue.appendChild(el('div', { class: 'chargement' }, [el('div', { class: 'squelette' }), el('div', { class: 'squelette' }),
         el('p', { class: 'petit', style: 'text-align:center' }, ['Chargement des points de contrôle…'])]));
@@ -241,7 +241,9 @@
           return el('button', { class: 'btn-second' + (a === R.agent ? ' actif' : ''), onclick: function () { R.agent = a; PM.Prefs.set('agent', a); sauver(); afficher(); } }, [a]);
         }));
         var dr = config.derniereRonde;
-        vue.appendChild(el('div', { class: 'champ' }, [el('label', {}, ['Agent effectuant la ronde']), champAgent, R.agent ? null : agentsRapides,
+        // Bloc « Agent » seulement au départ (ou sans prénom) ; ensuite le prénom est rappelé à côté du n° de point
+        var avecAgent = !R.agent || !R.debut || montrerAgent;
+        if (avecAgent) vue.appendChild(el('div', { class: 'champ' }, [el('label', {}, ['Agent effectuant la ronde']), champAgent, R.agent ? null : agentsRapides,
           dr ? el('div', { class: 'petit' }, ['Dernière ronde : ' + dr.date + ' · ' + dr.agent + (dr.duree ? ' · ' + dr.duree + ' min' : '')]) : null]));
 
         if (!total) { vue.appendChild(el('div', { class: 'vide-msg' }, ['Aucun point de contrôle actif. Vérifie la feuille PointsControle.'])); return; }
@@ -251,7 +253,9 @@
         vue.appendChild(el('div', { class: 'ronde-progress' }, [el('div', { style: 'width:' + Math.round(index / total * 100) + '%' })]));
         vue.appendChild(el('div', { class: 'ronde-nav' }, [
           el('button', { class: 'ronde-precedent', disabled: index === 0 ? 'disabled' : null, onclick: function () { if (index > 0) { index--; afficher(); } } }, ['◀ Précédent']),
-          el('span', { class: 'petit' }, ['Point ' + (index + 1) + ' / ' + total])
+          avecAgent ? el('span', { class: 'petit' }, ['Point ' + (index + 1) + ' / ' + total])
+            : el('button', { class: 'ronde-agent-court', title: 'Changer d’agent', onclick: function () { montrerAgent = true; afficher(); } },
+                ['Point ' + (index + 1) + ' / ' + total + ' · ' + R.agent])
         ]));
 
         var p = config.points[index], cle = cleDuPoint(p);
@@ -377,7 +381,7 @@
           var bloc = document.querySelector('.ronde-notes'); if (bloc && bloc.scrollIntoView) bloc.scrollIntoView({ behavior: 'smooth', block: 'center' });
           return;
         }
-        x.relance = false;
+        x.relance = false; montrerAgent = false;
         if (!estAlerte) x.nonConformes = [];
         videoReference(null, '', '', null); // coupe la vidéo du point qu'on quitte
         if (!R.debut) R.debut = new Date().toISOString();
