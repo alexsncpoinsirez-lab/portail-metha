@@ -24,7 +24,7 @@
       { zone: 'Supervision', libelle: 'Contrôle T° cuves', notes: ['45°'], reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photos: [], derniereAlerte: true, derniereReponseAlerte: 'Non conforme' },
       { zone: 'Supervision', libelle: 'Contrôle valeurs gaz avant charbon', notes: ['CH4 50-54%', 'O2 0,6%', 'H2S réagir si la valeur est au dessus de 250 ppm'], reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photos: [] },
       { zone: 'Incorporation', libelle: 'Contrôle usure vis verticale', notes: [], reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photos: [] },
-      { zone: 'Salle cogé', libelle: 'Contrôle fonctionnement groupe froid +', notes: ['T1° 2 à 5', 'T2° 18 à 20', 'P1° 2,5 à 3 bar', 'P2° 2 bar'], reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photos: [], derniereAlerte: true, derniereReponseAlerte: 'Non conforme', derniersNonConformes: ['T1° 2 à 5'], derniereDate: '04/11 09:22', dernierAgent: 'Mathieu' },
+      { zone: 'Salle cogé', libelle: 'Contrôle fonctionnement groupe froid +', notes: ['T1° 2 à 5', 'T2° 18 à 20', 'P1° 2,5 à 3 bar', 'P2° 2 bar'], explication: 'Relever les 2 thermomètres et les 2 manomètres du groupe froid.', reponses: ['Conforme', 'Non conforme'], reponsesAlerte: ['Non conforme'], photos: [], derniereAlerte: true, derniereReponseAlerte: 'Non conforme', derniersNonConformes: ['T1° 2 à 5'], derniereDate: '04/11 09:22', dernierAgent: 'Mathieu' },
       { zone: 'Incorporation', libelle: 'Nettoyage des fonds poussant', notes: [], reponses: ['Effectué', 'Reporté'], reponsesAlerte: ['Reporté'], photos: [], derniereAlerte: true, derniereReponseAlerte: 'Reporté' }
     ]
   };
@@ -265,6 +265,7 @@
           avant.length ? el('div', { class: 'ronde-badge-detail' }, ['Non conforme : ' + avant.join(' · ')]) : null]));
         carte.appendChild(el('div', { class: 'ronde-zone' }, [p.zone]));
         carte.appendChild(el('h2', { class: 'ronde-libelle' }, [p.libelle]));
+        if (p.explication) carte.appendChild(el('div', { class: 'ronde-explication' }, [el('span', { class: 'ronde-explication-i', 'aria-hidden': 'true' }, ['ℹ']), el('span', {}, [p.explication])]));
 
         // Paramètres (textes entre parenthèses du libellé) : on touche ceux qui ne sont PAS conformes.
         // En rouge pâle : jugé non conforme au dernier contrôle.

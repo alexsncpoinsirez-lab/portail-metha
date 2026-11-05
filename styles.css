@@ -569,6 +569,8 @@ body.futur .ronde-badge-alerte { box-shadow: 0 0 22px rgba(255,77,109,.6); }
   background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); margin-bottom: 10px; }
 body.futur .ronde-zone { font-family: var(--mono); color: var(--neon); background: color-mix(in srgb, var(--neon) 14%, transparent); border: 1px solid color-mix(in srgb, var(--neon) 50%, transparent); }
 .ronde-libelle { font-size: 21px; margin: 0 0 12px; line-height: 1.25; }
+.ronde-explication { display: flex; gap: 8px; align-items: flex-start; margin: -4px 0 12px; padding: 9px 11px; border-radius: 8px; background: var(--surface-2); border-left: 4px solid var(--accent, #2e86de); font-size: 14px; line-height: 1.35; white-space: pre-line; }
+.ronde-explication-i { flex: 0 0 auto; font-weight: 800; color: var(--accent, #2e86de); }
 .ronde-notes { display: grid; gap: 6px; margin-bottom: 12px; }
 .ronde-note { padding: 9px 11px; border-radius: 8px; border-left: 4px solid var(--texte-2); background: var(--surface-2); font-size: 14px; cursor: pointer; }
 .ronde-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 44px; }
