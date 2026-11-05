@@ -1,6 +1,6 @@
 /* Service worker : garde l'appli sur le téléphone -> ouverture instantanée, même sans réseau.
    Pour publier une mise à jour : changer le numéro de VERSION ci-dessous. */
-var VERSION = 'portail-metha-v71';
+var VERSION = 'portail-metha-v72';
 var FICHIERS = ['./', 'index.html', 'styles.css', 'config.js', 'app.js', 'rondes.js', 'nh3.js', 'clarke.js', 'bougies.js', 'agitation.js', 'analyses.js', 'pompes.js', 'qrcode.js', 'stock.js', 'filtration.js', 'taches.js', 'intro.js', 'icons/intro-logo.png', 'icons/intro-voix.mp3', 'icons/logo-prodeval.png', 'icons/compresseur-clarke.png', 'icons/logo-wangen.png', 'icons/logo-vogelsang.png', 'icons/logo-bauer.png', 'icons/alu.jpg', 'icons/marques/new-holland.png', 'icons/marques/case-ih.png', 'icons/marques/john-deere.png', 'icons/marques/fendt.png', 'icons/marques/manitou.png', 'icons/marques/jcb.png', 'icons/marques/artec.png',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
@@ -26,6 +26,7 @@ self.addEventListener('activate', function (e) {
 self.addEventListener('fetch', function (e) {
   var url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
+  if (e.request.headers.has('range') || e.request.destination === 'video') return; // vidéos : lecture directe (iPhone a besoin des morceaux)
   var polices = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
   if (url.origin !== self.location.origin && !polices) return; // serveurs Apps Script : jamais en cache ici
   // Affiche tout de suite la version gardée, et la met à jour en arrière-plan.

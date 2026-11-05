@@ -84,14 +84,33 @@
   function visionneuse(src) {
     var m = estVideo(src)
       ? el('video', { src: lienVideo(src), autoplay: 'autoplay', loop: 'loop', muted: 'muted', playsinline: 'playsinline', controls: 'controls' })
-      : el('img', { src: src, alt: '' });
+      : el('img', { src: lienImage(src), alt: '' });
     if (m.tagName === 'VIDEO') m.muted = true;
     var v = el('div', { class: 'visionneuse', onclick: function (e) { if (e.target !== m) v.remove(); } }, [m]);
     document.body.appendChild(v);
   }
   // Vidéo de référence : lien marqué « video: » par le serveur, ou fichier .mp4/.webm/.mov
   function estVideo(u) { return /^video:/i.test(u) || /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(u); }
-  function lienVideo(u) { return String(u).replace(/^video:/i, ''); }
+  // Identifiant d'un fichier Drive dans un lien (partage, open?id=, uc?id=, thumbnail?id=)
+  function idDrive(u) {
+    var m = String(u).match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:export=\w+&)?id=|thumbnail\?id=)([\w-]{20,})/);
+    return m ? m[1] : null;
+  }
+  function lienVideo(u) {
+    u = String(u).replace(/^video:\s*/i, '');
+    var id = idDrive(u);
+    return id ? 'https://drive.google.com/uc?export=download&id=' + id : u;
+  }
+  // lien Drive « partager » → image affichable (au cas où le serveur ne l'a pas déjà fait)
+  function lienImage(u) {
+    var id = idDrive(u);
+    return id && !/thumbnail\?id=/.test(u) ? 'https://drive.google.com/thumbnail?id=' + id + '&sz=w1000' : u;
+  }
+  // Drive refuse parfois la lecture directe : on passe alors par son lecteur intégré
+  function lecteurDrive(id, alt) {
+    return el('iframe', { src: 'https://drive.google.com/file/d/' + id + '/preview', title: alt || 'Vidéo de référence',
+      allow: 'autoplay; fullscreen', allowfullscreen: 'allowfullscreen', loading: 'lazy', class: 'ronde-video-drive' });
+  }
   // Une vidéo par lien, gardée tant qu'on reste sur le même point : elle ne redémarre pas
   // à chaque toucher d'un paramètre (l'écran est redessiné), et s'arrête au point suivant.
   var videosPoint = { cle: null, el: {} };
@@ -103,12 +122,23 @@
     if (!u) return null;
     var v = videosPoint.el[u];
     if (!v) {
+      var id = idDrive(u), etat = videosPoint;
+      var secours = function () {
+        // lecture directe impossible : lecteur Drive si c'est un fichier Drive, sinon on retire la vidéo
+        if (etat.el[u] !== v || v.tagName !== 'VIDEO') return;
+        if (!id) { surErreur.call(v); return; }
+        var f = lecteurDrive(id, alt);
+        etat.el[u] = f;
+        if (v.parentNode) v.parentNode.replaceChild(f, v);
+      };
       v = el('video', { src: lienVideo(u), autoplay: 'autoplay', loop: 'loop', muted: 'muted', playsinline: 'playsinline', preload: 'auto',
-        'aria-label': alt, onclick: function () { visionneuse(u); }, onerror: surErreur });
+        'aria-label': alt, onclick: function () { visionneuse(u); }, onerror: secours });
       v.muted = true; // obligatoire pour la lecture automatique sur téléphone
+      // Drive renvoie parfois une page au lieu de la vidéo, sans erreur : au bout de 8 s sans image, lecteur Drive
+      setTimeout(function () { if (v.readyState < 2) secours(); }, 8000);
       videosPoint.el[u] = v;
     }
-    setTimeout(function () { try { var r = v.play(); if (r && r['catch']) r['catch'](function () {}); } catch (e) {} }, 0);
+    if (v.tagName === 'VIDEO') setTimeout(function () { try { var r = v.play(); if (r && r['catch']) r['catch'](function () {}); } catch (e) {} }, 0);
     return v;
   }
 
@@ -269,7 +299,7 @@
             var alt = legendes ? p.notes[k] : 'Photo de référence';
             var img = estVideo(u)
               ? videoReference(cle, u, alt, function () { var b = legendes ? this.parentNode : this; if (b && b.parentNode) b.parentNode.removeChild(b); })
-              : el('img', { src: u, alt: alt, loading: 'lazy', onclick: function () { visionneuse(u); }, onerror: function () { (legendes ? this.parentNode : this).remove(); } });
+              : el('img', { src: lienImage(u), alt: alt, loading: 'lazy', onclick: function () { visionneuse(u); }, onerror: function () { (legendes ? this.parentNode : this).remove(); } });
             if (!legendes) return img;
             var nc = x.nonConformes.indexOf(p.notes[k]) >= 0;
             return el('figure', { class: 'ronde-ref' + (nc ? ' nc' : '') }, [img, el('figcaption', {}, [p.notes[k]])]);
