@@ -8,15 +8,85 @@
    Fichiers utilisés : icons/intro-logo.png, icons/intro-voix.mp3, icons/alu.jpg
    Pour couper l'intro : retirer la ligne <script src="intro.js"> de index.html.
    ===================================================================== */
+/* ---------------------------------------------------------------------
+   Depuis le 09/11/2026 :
+   - à l'ouverture : INTRO COURTE (3 s, sans son) = la médaille au logo
+     arrive puis fait deux battements de cœur ; toucher l'écran la passe ;
+   - l'intro complète ci-dessous ne se joue plus toute seule : bouton
+     « ▶ Revoir l'intro AgriEnergies » en bas de l'accueil (window.PM_IntroLongue).
+   --------------------------------------------------------------------- */
 (function () {
   'use strict';
 
-  // Pas d'intro si l'appli vient juste de se recharger (mise à jour) ou si le téléphone demande moins d'animations
   var reduit = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var recent = false;
-  try { recent = Date.now() - (+sessionStorage.getItem('ix_vu') || 0) < 30000; } catch (e) {}
-  if (reduit || recent) return;
 
+  /* ===================== INTRO COURTE (3 s) ===================== */
+  function introCourte() {
+    var recent = false;
+    try { recent = Date.now() - (+sessionStorage.getItem('ix_vu') || 0) < 30000; } catch (e) {}
+    if (reduit || recent) return;
+    try { sessionStorage.setItem('ix_vu', String(Date.now())); } catch (e) {}
+    var D = 3.0;                                   // durée totale (s)
+    var ARRIVEE = 0.65, B1 = 1.05, B2 = 1.75, SORTIE = 2.55;
+    var css = [
+      '#ixc{position:fixed;inset:0;z-index:99999;background:#05080f;display:grid;place-items:center;overflow:hidden;cursor:pointer;-webkit-user-select:none;user-select:none}',
+      '#ixc .g{position:absolute;inset:-20%;background-image:linear-gradient(rgba(56,225,255,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(56,225,255,.07) 1px,transparent 1px);background-size:44px 44px;',
+      '-webkit-mask-image:radial-gradient(circle at 50% 50%,#000 0 30%,transparent 65%);mask-image:radial-gradient(circle at 50% 50%,#000 0 30%,transparent 65%);opacity:0}',
+      '#ixc .r{position:absolute;left:50%;top:50%;width:min(56vw,32vh,260px);aspect-ratio:1;border-radius:50%;border:3px solid #22e3a1;transform:translate(-50%,-50%) scale(1);opacity:0;pointer-events:none}',
+      '#ixc .r.b{border-color:#38b6ff}',
+      '#ixc .m{position:relative;width:min(56vw,32vh,260px);aspect-ratio:1/.92;border-radius:12px;opacity:0;will-change:transform,opacity,filter;',
+      'background:#c9cdd1 url("icons/alu.jpg") center/cover no-repeat;border:1px solid rgba(210,222,235,.7);display:grid;place-items:center;',
+      'box-shadow:inset 0 2px 0 rgba(255,255,255,.95),inset 0 -3px 0 rgba(0,0,0,.28),0 14px 34px rgba(0,0,0,.65)}',
+      '#ixc .l{width:78%;aspect-ratio:609/607;background:url("icons/intro-logo.png") center/contain no-repeat;filter:drop-shadow(0 3px 2px rgba(0,0,0,.35))}',
+      '#ixc .v{position:absolute;width:9px;height:9px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff,#8a9198 60%,#4a5158)}',
+      '#ixc .v1{top:9px;left:9px}#ixc .v2{top:9px;right:9px}#ixc .v3{bottom:9px;left:9px}#ixc .v4{bottom:9px;right:9px}'
+    ].join('');
+    var st = document.createElement('style'); st.textContent = css;
+    var z = document.createElement('div'); z.id = 'ixc'; z.setAttribute('role', 'img'); z.setAttribute('aria-label', 'Logo AgriEnergies');
+    z.innerHTML = '<div class="g"></div><div class="r"></div><div class="r b"></div><div class="r"></div><div class="r b"></div>'
+      + '<div class="m"><span class="v v1"></span><span class="v v2"></span><span class="v v3"></span><span class="v v4"></span><div class="l"></div></div>';
+    var med, grille, anneaux, t0 = 0, raf = 0, fini = false, overflow = '';
+    function ease(x) { return x < 0 ? 0 : x > 1 ? 1 : 1 - Math.pow(1 - x, 3); }
+    function pic(t, tb, force) { var u = (t - tb) / 0.42; if (u < 0 || u > 1) return 0; var a = u < 0.14 ? u / 0.14 : 1 - (u - 0.14) / 0.86; return force * Math.pow(a, 1.5); }
+    function coeur(t, tb) { return pic(t, tb, 0.13) + pic(t, tb + 0.26, 0.08); } // lub… dub
+    function boucle(now) {
+      var t = Math.max(0, (now - t0) / 1000);
+      var ua = ease(t / ARRIVEE);
+      var bat = coeur(t, B1) + coeur(t, B2);
+      var ech = 0.2 + 0.8 * ua + (ua < 1 ? Math.sin(ua * Math.PI) * 0.12 : 0) + bat;
+      med.style.opacity = Math.min(1, ua * 1.6);
+      med.style.transform = 'translateY(' + ((1 - ua) * 40).toFixed(1) + 'px) scale(' + ech.toFixed(4) + ')';
+      med.style.filter = 'blur(' + ((1 - ua) * 8).toFixed(1) + 'px) brightness(' + (1 + bat * 2).toFixed(2) + ') drop-shadow(0 0 ' + (10 + bat * 110).toFixed(0) + 'px rgba(34,227,161,' + Math.min(1, 0.4 + bat * 4).toFixed(2) + '))';
+      grille.style.opacity = (0.8 * ua).toFixed(2);
+      [B1, B1 + 0.26, B2, B2 + 0.26].forEach(function (tb, i) {
+        var u = (t - tb) / 0.9, a = anneaux[i];
+        if (u < 0 || u > 1) { a.style.opacity = 0; return; }
+        a.style.opacity = (1 - u).toFixed(2);
+        a.style.transform = 'translate(-50%,-50%) scale(' + (1 + ease(u) * (i % 2 ? 1.2 : 1.7)).toFixed(3) + ')';
+      });
+      if (t >= SORTIE) z.style.opacity = Math.max(0, 1 - (t - SORTIE) / (D - SORTIE)).toFixed(2);
+      if (t >= D) { terminer(); return; }
+      raf = requestAnimationFrame(boucle);
+    }
+    function terminer() {
+      if (fini) return; fini = true; cancelAnimationFrame(raf);
+      document.body.style.overflow = overflow;
+      if (z.parentNode) z.parentNode.removeChild(z);
+      if (st.parentNode) st.parentNode.removeChild(st);
+    }
+    function monter() {
+      document.head.appendChild(st); document.body.appendChild(z);
+      overflow = document.body.style.overflow; document.body.style.overflow = 'hidden';
+      med = z.querySelector('.m'); grille = z.querySelector('.g'); anneaux = z.querySelectorAll('.r');
+      z.addEventListener('click', terminer);
+      t0 = performance.now(); raf = requestAnimationFrame(boucle);
+    }
+    if (document.body) monter(); else document.addEventListener('DOMContentLoaded', monter);
+  }
+
+  /* ===================== INTRO COMPLÈTE (≈ 12 s, sur demande) ===================== */
+  /* direct = true : lancée par un bouton (l'appui débloque le son) → pas d'écran « Toucher pour entrer ». */
+  function introLongue(direct) {
   /* ================= Chronologie (secondes) ================= */
   var T = {
     implosion: 2.5, impact: 2.85,
@@ -388,5 +458,10 @@
     terminer();
   });
 
-  if (document.body) monter(); else document.addEventListener('DOMContentLoaded', monter);
+  monter();
+  if (direct) lancer();
+  }
+
+  window.PM_IntroLongue = function () { if (!document.getElementById('ix')) introLongue(true); };
+  introCourte();
 })();

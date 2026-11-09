@@ -476,6 +476,10 @@
       grille.appendChild(b);
     });
     vue.appendChild(grille);
+    // intro complète AgriEnergies (avec la voix), rejouable à la demande (09/11/2026)
+    if (window.PM_IntroLongue) vue.appendChild(el('div', { class: 'accueil-intro-btn' }, [
+      el('button', { class: 'btn-second', type: 'button', onclick: function () { window.PM_IntroLongue(); } }, ['▶ Revoir l’intro AgriEnergies'])
+    ]));
   }
 
   // site qui n'a qu'un outil « version rapide » (ex. SNC Poinsirez) : on l'ouvre directement
