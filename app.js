@@ -407,6 +407,7 @@
     document: '<path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6"/>',
     site: '<path d="M3 21h18M5 21V10l5-3v14M10 21V5l9 4v12M13 11h3M13 15h3"/>',
     taches: '<path d="M4 5h4v14H4zM10 5h4v9h-4zM16 5h4v11h-4zM5.5 8.5h1M11.5 8.5h1M17.5 8.5h1"/>',
+    assistant: '<path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H10l-4 4v-4H6a2 2 0 0 1-2-2z"/><path d="M12 6.5l.9 1.9 1.9.9-1.9.9-.9 1.9-.9-1.9-1.9-.9 1.9-.9z"/>',
     carnet: '<path d="M5 4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1zM8 3v18M11 8h5M11 12h5M11 16h3"/>',
     fleche: '<path d="M9 5l7 7-7 7"/>'
   };

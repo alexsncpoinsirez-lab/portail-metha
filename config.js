@@ -24,6 +24,7 @@ var PORTAIL_CONFIG = {
       apiUrl: 'https://script.google.com/macros/s/AKfycbyBXfDFzyIUcc2DepkrldDLKmVyswz1gTgRB8FbumV5--XH2E5_BiAEAX4qxpkPoMm5/exec',
       outils: [
         { id: 'carnet-rotte', nom: 'Carnet d’interventions', description: 'Toutes les interventions du site : saisie dictée, recherche, onglet Maint', icone: 'carnet', type: 'interne', module: 'carnet' },
+        { id: 'assistant-rotte', nom: 'Assistant maintenance', description: 'Questions écrites ou dictées sur les interventions, aide au diagnostic (IA)', icone: 'assistant', type: 'interne', module: 'assistant' },
         {
           id: 'rondes-rotte',
           nom: 'Rondes journalières',
@@ -48,6 +49,7 @@ var PORTAIL_CONFIG = {
       apiUrl: 'https://script.google.com/macros/s/AKfycbzWi9pWu4hhTwIY0nXzHRE3ywgXUsCMcona7Uhim8pcSkb2BUtBA0BFrmzDc5zr3L0Twg/exec', // serveur Arraincourt
       outils: [
         { id: 'carnet-arr', nom: 'Carnet d’interventions', description: 'Toutes les interventions du site : saisie dictée, recherche, onglets Maint', icone: 'carnet', type: 'interne', module: 'carnet' },
+        { id: 'assistant-arr', nom: 'Assistant maintenance', description: 'Questions écrites ou dictées sur les interventions, aide au diagnostic (IA)', icone: 'assistant', type: 'interne', module: 'assistant' },
         {
           id: 'ronde-arraincourt',
           nom: 'Ronde journalière Métha 2',
