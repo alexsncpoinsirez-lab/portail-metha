@@ -11,7 +11,8 @@
     'Quelles sont les 5 dernières interventions ?',
     'Tous les combien d’heures change-t-on le stator du Premix 2 ?',
     'Qu’a-t-on déjà fait sur le séparateur ?',
-    'Quand a-t-on changé le charbon pour la dernière fois ?'
+    'Trouve-moi le schéma électrique de la Rotte',
+    'Combien de stators Wangen reste-t-il en stock ?'
   ];
   var Reco = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -65,9 +66,15 @@
         }
         conv.forEach(function (x) {
           fil.appendChild(el('div', { class: 'as-bulle as-q' }, [x.q]));
-          if (x.enCours) { fil.appendChild(el('div', { class: 'as-bulle as-r as-attente' }, [el('span', { class: 'as-points' }, ['●', '●', '●']), ' Je cherche dans le carnet…'])); return; }
+          if (x.enCours) { fil.appendChild(el('div', { class: 'as-bulle as-r as-attente' }, [el('span', { class: 'as-points' }, ['●', '●', '●']), ' Je cherche (carnet, outils, documents)… jusqu’à 2 min'])); return; }
           if (x.erreur) { fil.appendChild(el('div', { class: 'as-bulle as-r as-erreur' }, ['⚠ ' + x.erreur, el('br'), el('button', { type: 'button', class: 'as-lien', onclick: function () { conv.splice(conv.indexOf(x), 1); poser(x.q); } }, ['Réessayer'])])); return; }
           var b = el('div', { class: 'as-bulle as-r' }, [el('div', { class: 'as-texte' }, [x.r])]);
+          if (x.docs && x.docs.length) {
+            b.appendChild(el('div', { class: 'as-docs' }, x.docs.map(function (d) {
+              return el('a', { class: 'as-doc', href: d.lien, target: '_blank', rel: 'noopener' }, [(/^📁/.test(d.nom) ? '' : '📄 ') + d.nom]);
+            })));
+          }
+          if (x.consult && x.consult.length) b.appendChild(el('div', { class: 'as-consult' }, ['Consulté : ' + x.consult.join(' · ')]));
           var actions = el('div', { class: 'as-actions' });
           if ('speechSynthesis' in window) actions.appendChild(el('button', { type: 'button', class: 'as-lien', onclick: function () { lireAVoixHaute(x.r); } }, ['🔊 Écouter']));
           if (x.refs && x.refs.length) {
@@ -126,9 +133,10 @@
         var x = { q: q, enCours: true };
         var historique = conv.filter(function (c) { return c.r && !c.erreur; }).slice(-3).map(function (c) { return { q: c.q, r: c.r }; });
         conv.push(x); enCours = true; afficher();
-        PM.Api.appeler(ctx.apiUrl, { action: 'assistant.question', cle: ctx.cle, question: q, historique: historique, tous: tous }, 90000).then(function (j) {
+        PM.Api.appeler(ctx.apiUrl, { action: 'assistant.question', cle: ctx.cle, question: q, historique: historique, tous: tous }, 180000).then(function (j) {
           if (!j || !j.ok) throw new Error((j && j.erreur) || 'Réponse vide du serveur');
-          x.r = j.reponse; x.refs = j.references || [];
+          x.r = j.reponse; x.refs = j.references || []; x.consult = j.consultations || [];
+          x.docs = (j.documents || []).filter(function (d) { return d && /^https:\/\/(drive|docs)\.google\.com\//.test(d.lien || ''); });
           if (parler) lireAVoixHaute(x.r);
         })['catch'](function (e) {
           x.erreur = (PM.raison ? PM.raison(e) + ' — ' : '') + (e && e.message || 'erreur');

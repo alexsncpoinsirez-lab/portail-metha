@@ -1450,3 +1450,6 @@ body.futur .carnet .bandeau { animation: none; } /* pas de ré-animation à chaq
 .assistant .as-micro.actif { background: var(--alerte); border-color: var(--alerte); animation: cnPulse 1s infinite; }
 body.futur .assistant .as-q { background: color-mix(in srgb, var(--neon) 30%, #0b1420); border: 1px solid var(--neon); }
 body.futur .assistant .as-envoyer { background: var(--neon); color: #04121c; border-color: var(--neon); }
+.assistant .as-docs { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; white-space: normal; }
+.assistant .as-doc { display: block; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--bord); background: var(--surface-2); color: var(--texte); text-decoration: none; font-weight: 650; font-size: 14px; overflow-wrap: anywhere; }
+.assistant .as-consult { margin-top: 8px; font-size: 12px; color: var(--texte-2); white-space: normal; }

@@ -224,7 +224,8 @@
         }).then(null, function (e) {
           if (!e.type) e = erreur('serveur', e.message || String(e));
           noter(e.type, e.message);
-          var refaire = lecture && n === 0 && (e.type === 'delai' || e.type === 'occupe' || e.type === 'page' || (e.type === 'reseau' && navigator.onLine !== false));
+          var refaire = lecture && n === 0 && action.indexOf('assistant.') !== 0 && // l'assistant n'est jamais relancé tout seul (chaque question est payante)
+             (e.type === 'delai' || e.type === 'occupe' || e.type === 'page' || (e.type === 'reseau' && navigator.onLine !== false));
           if (!refaire) throw e;
           return new Promise(function (ok) { setTimeout(ok, 2500); }).then(function () { return essai(1); });
         });
