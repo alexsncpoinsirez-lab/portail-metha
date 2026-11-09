@@ -23,6 +23,7 @@ var PORTAIL_CONFIG = {
       // (il n'apporte plus que la clé). Vide = adresse à saisir dans Réglages.
       apiUrl: 'https://script.google.com/macros/s/AKfycbyBXfDFzyIUcc2DepkrldDLKmVyswz1gTgRB8FbumV5--XH2E5_BiAEAX4qxpkPoMm5/exec',
       outils: [
+        { id: 'carnet-rotte', nom: 'Carnet d’interventions', description: 'Toutes les interventions du site : saisie dictée, recherche, onglet Maint', icone: 'carnet', type: 'interne', module: 'carnet' },
         {
           id: 'rondes-rotte',
           nom: 'Rondes journalières',
@@ -46,6 +47,7 @@ var PORTAIL_CONFIG = {
       neon: '#38b6ff',
       apiUrl: 'https://script.google.com/macros/s/AKfycbzWi9pWu4hhTwIY0nXzHRE3ywgXUsCMcona7Uhim8pcSkb2BUtBA0BFrmzDc5zr3L0Twg/exec', // serveur Arraincourt
       outils: [
+        { id: 'carnet-arr', nom: 'Carnet d’interventions', description: 'Toutes les interventions du site : saisie dictée, recherche, onglets Maint', icone: 'carnet', type: 'interne', module: 'carnet' },
         {
           id: 'ronde-arraincourt',
           nom: 'Ronde journalière Métha 2',

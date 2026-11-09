@@ -556,7 +556,7 @@
         modaleValeur('Cylindre ' + id, 'Compteur horaire au remplacement (h)', initiale, function (v) {
           if (v < 0) return 'Valeur horaire invalide.';
           if (v > E.heuresMoteur) return 'Le remplacement ne peut pas être postérieur au compteur horaire actuel (' + E.heuresMoteur + ' h).';
-          saisir({ type: 'bougies.remplacement', cylindre: id, heureRemplacement: v });
+          saisir({ type: 'bougies.remplacement', cylindre: id, heureRemplacement: v, agent: PM.Prefs.get('agent', ''), horodatage: new Date().toISOString() }); // agent + date : ligne du carnet d'interventions
         });
       }
       function ouvrirModaleCompteur() {

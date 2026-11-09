@@ -1369,3 +1369,51 @@ body.futur .ck-kpi { background: rgba(255,255,255,.04); border: 1px solid var(--
 /* Bouton « Revoir l'intro » sous les cartes de l'accueil (09/11/2026) */
 .accueil-intro-btn{display:flex;justify-content:center;margin:22px 0 8px}
 .accueil-intro-btn .btn-second{font-size:13px;opacity:.85}
+
+/* ---------- Carnet d'interventions (carnet.js) ---------- */
+.carnet .cn-tete { display: grid; gap: 10px; }
+.carnet .cn-recherche { min-height: 46px; border-radius: 12px; border: 1px solid var(--bord); padding: 0 12px; background: var(--surface); color: var(--texte); font: inherit; width: 100%; box-sizing: border-box; }
+.carnet .cn-filtres { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.carnet .cn-filtres select { min-height: 42px; border-radius: 10px; border: 1px solid var(--bord); padding: 0 8px; background: var(--surface); color: var(--texte); font: inherit; font-size: 13px; min-width: 0; }
+@media (max-width: 520px) { .carnet .cn-filtres { grid-template-columns: 1fr 1fr; } .carnet .cn-filtres select:first-child { grid-column: 1 / -1; } }
+.carnet .cn-compte { margin: 2px 4px 6px; }
+.carnet .cn-mois { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--texte-2); margin: 18px 4px 8px; font-weight: 700; }
+.carnet .cn-carte { background: var(--surface); border: 1px solid var(--bord); border-radius: var(--rayon); padding: 12px 14px; margin-bottom: 10px; cursor: pointer; box-shadow: var(--ombre); }
+.carnet .cn-carte.attente { border-style: dashed; border-color: var(--attente); }
+.carnet .cn-carte.ouverte { border-color: var(--neon, var(--ok)); }
+.carnet .cn-ligne1 { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-size: 13px; color: var(--texte-2); }
+.carnet .cn-origine { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--surface-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+.carnet .cn-o-portail { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.carnet .cn-o-outil { background: color-mix(in srgb, #38b6ff 18%, transparent); color: #2a8fd0; }
+.carnet .cn-lieu { font-weight: 750; font-size: 16px; margin: 6px 0 4px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.carnet .cn-type { font-size: 11px; font-weight: 650; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--bord); color: var(--texte-2); }
+.carnet .cn-prob, .carnet .cn-interv { font-size: 14px; margin: 3px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.carnet .cn-carte:not(.ouverte) .cn-prob, .carnet .cn-carte:not(.ouverte) .cn-interv { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.carnet .cn-bas { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.carnet .cn-eff { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; }
+.carnet .cn-eff-oui { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.carnet .cn-eff-non { background: color-mix(in srgb, var(--alerte) 18%, transparent); color: var(--alerte); }
+.carnet .cn-eff-autre { background: color-mix(in srgb, var(--attente) 18%, transparent); color: var(--attente); }
+.carnet .cn-detail { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 10px 0; font-size: 13px; }
+.carnet .cn-detail dt { color: var(--texte-2); }
+.carnet .cn-detail dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.carnet .cn-plus { width: 100%; margin-top: 4px; }
+.carnet .cn-pied { margin-top: 18px; display: grid; gap: 10px; }
+.carnet .cn-form .carte-tete { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+.carnet .cn-form textarea { width: 100%; box-sizing: border-box; min-height: 74px; border-radius: 12px; border: 1px solid var(--bord); padding: 10px 12px; background: var(--surface); color: var(--texte); font: inherit; resize: vertical; }
+.carnet .cn-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.carnet .cn-3col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 10px; }
+.carnet .cn-2col .champ, .carnet .cn-3col .champ { min-width: 0; }
+.carnet .cn-2col input, .carnet .cn-3col input, .carnet .cn-2col select { min-width: 0; width: 100%; box-sizing: border-box; }
+@media (max-width: 420px) { .carnet .cn-2col { grid-template-columns: 1fr; } }
+.carnet .cn-choix { display: flex; gap: 8px; flex-wrap: wrap; }
+.carnet .cn-avec-micro { display: flex; gap: 8px; align-items: flex-start; }
+.carnet .cn-avec-micro > :first-child { flex: 1; min-width: 0; }
+.carnet .cn-micro { flex: none; width: 46px; height: 46px; border-radius: 12px; border: 1px solid var(--bord); background: var(--surface-2); font-size: 20px; }
+.carnet .cn-micro.actif { background: var(--alerte); border-color: var(--alerte); animation: cnPulse 1s infinite; }
+@keyframes cnPulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--alerte) 30%, transparent); } }
+.carnet .cn-suppr { width: 100%; margin-top: 10px; }
+.carnet .cn-suppr.arme { background: var(--alerte); color: #fff; border-color: var(--alerte); }
+body.futur .carnet .cn-mois { font-family: var(--mono); color: var(--neon); }
+body.futur .carnet .cn-date { font-family: var(--mono); font-size: 12px; }
+body.futur .carnet .bandeau { animation: none; } /* pas de ré-animation à chaque toucher */
