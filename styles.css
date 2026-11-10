@@ -1453,3 +1453,8 @@ body.futur .assistant .as-envoyer { background: var(--neon); color: #04121c; bor
 .assistant .as-docs { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; white-space: normal; }
 .assistant .as-doc { display: block; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--bord); background: var(--surface-2); color: var(--texte); text-decoration: none; font-weight: 650; font-size: 14px; overflow-wrap: anywhere; }
 .assistant .as-consult { margin-top: 8px; font-size: 12px; color: var(--texte-2); white-space: normal; }
+
+/* Commandes : quantité reçue modifiable dans la ligne */
+.st-qte { width: 58px; min-height: 34px; padding: 0 6px; text-align: center; font-weight: 700; font-size: 16px; border: 1px solid var(--bord); border-radius: 8px; background: var(--surface); color: var(--texte); }
+.st-qte:focus { outline: 2px solid var(--accent); }
+.st-qte-err { border-color: #c62828; }

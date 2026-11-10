@@ -1445,6 +1445,7 @@
       }
 
       /* ---------- commandes : 🛒 Mon panier -> Commandé -> Reçu ; ⚠ sous le seuil à part ---------- */
+      var qteRecue = {}; // quantités reçues modifiées dans l'écran Commandes (gardées tant que l'appli est ouverte)
       function ecranCommander(racine) {
         racine.appendChild(el('div', { class: 'pp-barre' }, [el('h2', { class: 'pp-titre' }, ['Commandes'])]));
         var zone = el('div');
@@ -1521,9 +1522,27 @@
               voir(it)])]);
         }
         function ligneCommandee(it) {
-          return el('tr', { class: it.enAttente ? 'attente' : '' }, [descr(it), el('td', {}, [el('b', {}, [String(it.quantite)])]),
+          // Quantité reçue modifiable directement dans la ligne (touche le nombre), puis « Reçu » ajoute ce nombre au stock.
+          var k = cleCmd(it), cmdQ = it.quantite || 1;
+          var inp = el('input', { class: 'st-qte', type: 'text', inputmode: 'numeric', 'aria-label': 'Quantité reçue', value: String(qteRecue[k] != null ? qteRecue[k] : cmdQ) });
+          var note = el('div', { class: 'st-sous' }, []);
+          function maj() {
+            var n = entier(inp.value, 1);
+            if (!isNaN(n) && n !== cmdQ) { qteRecue[k] = n; note.textContent = 'commandé : ' + cmdQ; }
+            else { if (!isNaN(n)) delete qteRecue[k]; note.textContent = ''; }
+            inp.classList.toggle('st-qte-err', isNaN(n));
+          }
+          inp.addEventListener('focus', function () { inp.select(); });
+          inp.addEventListener('input', maj);
+          inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') inp.blur(); });
+          maj();
+          return el('tr', { class: it.enAttente ? 'attente' : '' }, [descr(it), el('td', {}, [inp, note]),
             el('td', { class: 'pp-actions' }, [
-              el('button', { class: 'btn-principal st-mini', type: 'button', title: 'Commande reçue : ajouter au stock', onclick: function () { ouvrirReception(it); } }, ['Reçu']),
+              el('button', { class: 'btn-principal st-mini', type: 'button', title: 'Commande reçue : ajouter la quantité au stock', onclick: function () {
+                var n = entier(inp.value, 1);
+                if (isNaN(n)) { PM.toast('Quantité reçue : nombre entier (1 ou plus).'); inp.focus(); return; }
+                delete qteRecue[k]; recevoir(it, n);
+              } }, ['Reçu']),
               voir(it),
               el('button', { class: 'pp-icone pp-danger', type: 'button', title: 'Annuler la commande', onclick: function () {
                 if (confirm('Annuler la commande de ' + (it.designation || it.reference) + ' ?')) saisir({ type: 'stock.retirerPanier', quoi: 'commande', materiel: it.materiel, reference: it.reference, designation: it.designation });
@@ -1542,19 +1561,11 @@
               fermer(); saisir({ type: 'stock.commande', materiel: it.materiel, reference: it.reference, designation: it.designation, casier: it.casier, quantite: n, fournisseur: four.value.trim() });
             } }, ['Commandé'])]);
         }
-        function ouvrirReception(it) {
-          var q = el('input', { type: 'text', inputmode: 'numeric', value: String(it.quantite || 1) });
-          var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
+        function recevoir(it, n) {
           var p = pieceDe(it);
-          var fermer = modale('Commande reçue', (it.designation || it.reference) + (p ? ' — stock actuel : ' + p.quantiteStock : ''), [
-            el('div', { class: 'champ' }, [el('label', {}, ['Quantité reçue (ajoutée au stock)']), q]), msg,
-            el('button', { class: 'btn-principal', type: 'button', onclick: function () {
-              var n = entier(q.value, 1);
-              if (isNaN(n)) { msg.textContent = 'Quantité : nombre entier (1 ou plus).'; msg.hidden = false; return; }
-              fermer(); saisir(Object.assign({ type: 'stock.reception', quoi: 'commande', materiel: it.materiel, reference: it.reference, designation: it.designation, quantite: n, fournisseur: it.fournisseur || '' },
-                p ? { rowIndex: p.rowIndex, empreinte: { casier: p.casier || '', cotes: p.cotes || '' } } : {}));
-              PM.toast('Reçu : +' + n + ' en stock');
-            } }, ['Ajouter au stock'])]);
+          saisir(Object.assign({ type: 'stock.reception', quoi: 'commande', materiel: it.materiel, reference: it.reference, designation: it.designation, quantite: n, fournisseur: it.fournisseur || '' },
+            p ? { rowIndex: p.rowIndex, empreinte: { casier: p.casier || '', cotes: p.cotes || '' } } : {}));
+          PM.toast('Reçu : +' + n + ' en stock' + (p ? ' (' + (p.quantiteStock + n) + ' au total)' : ''));
         }
         var cacheCmd = 'stock_commander_' + S;
         if (cmdServeur === null) PM.DB.get(cacheCmd).then(function (c) { if (cmdServeur === null) { cmdServeur = c || []; if (ecran === 'commander' && actif()) rendre(); } });
