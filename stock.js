@@ -26,10 +26,12 @@
   // Clé de partage (même règle que le serveur, stCleCommune_) : NON = jamais partagée ; sans référence = jamais partagée.
   // La référence est le SEUL lien entre deux lignes (choix d'Alex 16/10).
   function cleCommune(p) {
-    if (p.commun === false) return '';
+    if (p.commun === false || p.nonStocke) return ''; // « x » = pas encore suivie en stock : jamais partagée
     return String(p.reference || '').trim();
   }
   // Commandes : référence « 00123 » = 123 (Sheets a pu la transformer en nombre) ; sans référence : matériel + désignation
+  // Quantité affichée : « x » pour une pièce de la liste constructeur pas encore suivie en stock (écrite en bleu)
+  function qteTexte(p) { return p.nonStocke ? 'x' : String(p.quantiteStock); }
   function refNorm(r) { r = String(r === null || r === undefined ? '' : r).trim(); return /^\d+$/.test(r) ? (r.replace(/^0+/, '') || '0') : r; }
   function cleCmd(x) { return x.materiel + '|' + (String(x.reference || '').trim() ? 'r:' + refNorm(x.reference) : 'd:' + String(x.designation || '').trim()); }
   var TYPES_CMD = ['stock.panier', 'stock.retirerPanier', 'stock.commande', 'stock.reception'];
@@ -170,6 +172,13 @@
       if (!cible) return;
       // quantité / seuil : toutes les lignes qui partagent le stock (même règle que le serveur ; une pièce NON ne touche qu'elle-même)
       var memeRef = [cible], kc = cleCommune(cible);
+      if (a.type === 'stock.quantite' && cible.nonStocke) {
+        // 1re quantité d'une pièce « x » : les autres lignes « x » de la même référence (autres pompes) suivent (même règle que le serveur)
+        var rx = String(cible.reference || '').trim();
+        if (rx) mats.forEach(function (mm) { mm.pieces.forEach(function (p) { if (p !== cible && String(p.reference || '').trim() === rx && (p.nonStocke || cleCommune(p) === rx)) memeRef.push(p); }); });
+        memeRef.forEach(function (p) { p.nonStocke = false; });
+        kc = '';
+      }
       if (kc) {
         memeRef = [];
         mats.forEach(function (mm) { mm.pieces.forEach(function (p) { if (p === cible || cleCommune(p) === kc) memeRef.push(p); }); });
@@ -186,7 +195,7 @@
       cible.enAttente = true;
     });
     mats.forEach(function (m) {
-      m.pieces.forEach(function (p) { p.materiel = m.nom; p.quantiteACommander = Math.max((p.seuil || 0) - p.quantiteStock, 0); p.stockBas = (p.seuil || 0) > 0 && p.quantiteStock <= p.seuil; }); // seuil 0 = pas de seuil
+      m.pieces.forEach(function (p) { p.materiel = m.nom; p.quantiteACommander = p.nonStocke ? 0 : Math.max((p.seuil || 0) - p.quantiteStock, 0); p.stockBas = !p.nonStocke && (p.seuil || 0) > 0 && p.quantiteStock <= p.seuil; }); // seuil 0 = pas de seuil
       m.nbAlertes = m.pieces.filter(function (p) { return p.stockBas; }).length;
     });
     return mats;
@@ -476,18 +485,61 @@
             return;
           }
           if (!liste.length) { zone.appendChild(el('div', { class: 'vide-msg' }, ['Aucun matériel trouvé dans ce fichier.'])); return; }
+          // Machines avec fiche (pompes Wangen…) en tête, puis les autres matériels
+          var machines = liste.filter(function (m) { return machineDe(m.nom); }), autres = liste.filter(function (m) { return !machineDe(m.nom); });
+          if (machines.length) {
+            zone.appendChild(el('div', { class: 'st-sous-titre' }, ['⚙ Machines — fiche + liste du constructeur (' + machines.length + ')']));
+            grille(machines);
+            zone.appendChild(el('div', { class: 'st-sous-titre' }, ['Autres matériels (' + autres.length + ')']));
+          }
+          grille(machines.length ? autres : liste);
+        }
+        function grille(liste) {
           var g = el('div', { class: 'pp-grille' });
           liste.forEach(function (m, i) {
-            g.appendChild(el('button', { class: 'pp-carte st-carte', type: 'button', style: '--i:' + i, onclick: function () { recherche = ''; aller('pieces', m.nom); } }, [
+            var mc = machineDe(m.nom);
+            g.appendChild(el('button', { class: 'pp-carte st-carte' + (mc ? ' st-carte-machine' : ''), type: 'button', style: '--i:' + i, onclick: function () { recherche = ''; aller('pieces', m.nom); } }, [
               el('div', { class: 'st-carte-tete' }, [el('span', { class: 'pp-nom' }, [m.nom]),
                 m.nbAlertes ? el('span', { class: 'st-pastille', title: m.nbAlertes + ' pièce(s) sous le seuil' }, [String(m.nbAlertes)]) : null]),
-              el('div', { class: 'pp-der' }, [m.enAttente ? 'en attente d’envoi…' : (m.pieces.length + ' pièce' + (m.pieces.length > 1 ? 's' : '') + (m.nbAlertes ? ' · ' + m.nbAlertes + ' sous seuil' : ''))])
+              mc ? el('div', { class: 'st-carte-machine-info' }, [(mc.modele || '') + (mc.serie ? ' · n° ' + mc.serie : '')]) : null,
+              el('div', { class: 'pp-der' }, [m.enAttente ? 'en attente d’envoi…' : (m.pieces.length + ' pièce' + (m.pieces.length > 1 ? 's' : '') + (m.nbAlertes ? ' · ' + m.nbAlertes + ' sous seuil' : '')
+                + (mc ? ' · ' + m.pieces.filter(function (p) { return p.nonStocke; }).length + ' en bleu' : ''))])
             ]));
           });
           zone.appendChild(g);
         }
         champ.addEventListener('input', function () { recherche = champ.value; remplir(); });
         remplir();
+      }
+      /* ---------- machines (onglet « Machines » du classeur central) : fiche info d'une pompe ---------- */
+      function machineDe(nom) { return ((T && T.machines) || []).filter(function (x) { return x.onglet === nom; })[0] || null; }
+      function dateFr(iso) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '')); return m ? m[3] + '/' + m[2] + '/' + m[1] : String(iso || ''); }
+      function ficheMachine(mc, liste) {
+        var nbX = liste.filter(function (p) { return p.nonStocke; }).length, nbS = liste.length - nbX;
+        return el('div', { class: 'st-machine' }, [
+          el('div', { class: 'st-machine-titre' }, ['⚙ ' + mc.nom]),
+          el('div', { class: 'st-machine-l' }, [el('span', { class: 'st-machine-lib' }, ['Plan']), (mc.plan || '—') + (mc.modele ? ' – ' + mc.modele : '') + (mc.fabricant ? ' · ' + mc.fabricant : '')]),
+          el('div', { class: 'st-machine-l' }, [el('span', { class: 'st-machine-lib' }, ['N° de série']), (mc.serie || '—') + (mc.miseEnService ? ' · mise en service le ' + dateFr(mc.miseEnService) : '')]),
+          mc.remarque ? el('div', { class: 'st-machine-l' }, [el('span', { class: 'st-machine-lib' }, ['Remarque']), mc.remarque]) : null,
+          el('div', { class: 'st-machine-l petit' }, [liste.length + ' pièces : ' + nbS + ' suivie' + (nbS > 1 ? 's' : '') + ' en stock, ',
+            el('span', { class: 'st-x-txt' }, [nbX + ' pas encore en stock (en bleu, « x »)'])])]);
+      }
+      function ouvrirMiseEnStock(p) {
+        var inp = el('input', { type: 'text', inputmode: 'numeric', value: '', placeholder: '0', autocomplete: 'off' });
+        var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
+        var fermer = modale('Mettre en stock', (p.designation || '') + (p.reference ? ' — réf. ' + p.reference : ''), [
+          el('p', { class: 'petit' }, ['Cette pièce vient de la liste du constructeur et n’est pas encore suivie dans le stock (« x »). Indique combien il y en a en magasin (0 si aucune) : elle sera suivie ensuite comme les autres, et la même référence sur les autres pompes prendra la même quantité.']),
+          el('div', { class: 'champ' }, [el('label', {}, ['Quantité en magasin']), inp]), msg,
+          el('button', { class: 'btn-principal', type: 'button', onclick: valider }, ['Mettre en stock'])]);
+        function valider() {
+          var n = entier(inp.value === '' ? 'x' : inp.value, 0);
+          if (isNaN(n)) { msg.textContent = 'Saisis un nombre entier (0 ou plus).'; msg.hidden = false; return; }
+          fermer();
+          saisir(Object.assign({ type: 'stock.quantite', absolu: true, compte: n, motif: 'Mise en stock' }, refPiece(p)));
+          PM.toast('En stock : ' + n + ' × ' + (p.designation || p.reference));
+        }
+        inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); valider(); } });
+        setTimeout(function () { inp.focus(); }, 30);
       }
       function ouvrirAjoutMateriel() {
         var inp = el('input', { type: 'text', placeholder: 'ex : Broyeur, Pompe doseuse…' });
@@ -558,7 +610,18 @@
         racine.appendChild(el('div', { class: 'pp-barre' }, [
           el('button', { class: 'btn-second', type: 'button', onclick: function () { aller('materiels'); } }, ['← Matériels']),
           el('h2', { class: 'pp-titre' }, [materiel])]));
-        var champ = el('input', { type: 'search', class: 'st-filtre', placeholder: 'Filtrer (désignation, référence, casier)…', value: filtre, autocomplete: 'off' });
+        var mc = machineDe(materiel);
+        if (mc) racine.appendChild(ficheMachine(mc, liste));
+        // pièces suivies / pas encore en stock (« x », en bleu) : choix en haut, mémorisé par matériel
+        var avecX = liste.some(function (p) { return p.nonStocke; }), clePrefX = 'stock_x_' + S + '_' + materiel;
+        var choixX = avecX ? PM.Prefs.get(clePrefX, '') : '';
+        if (avecX) {
+          var nX = liste.filter(function (p) { return p.nonStocke; }).length;
+          racine.appendChild(el('div', { class: 'st-chips' }, [{ v: '', t: 'Toutes (' + liste.length + ')' }, { v: 'stock', t: 'En stock (' + (liste.length - nX) + ')' }, { v: 'x', t: 'Pas en stock (' + nX + ')' }].map(function (x) {
+            return el('button', { class: 'btn-second st-chip' + (x.v === choixX ? ' actif' : '') + (x.v === 'x' ? ' st-chip-x' : ''), type: 'button', onclick: function () { choixX = x.v; PM.Prefs.set(clePrefX, x.v); afficher(); } }, [x.t]);
+          })));
+        }
+        var champ = el('input', { type: 'search', class: 'st-filtre', placeholder: 'Filtrer (désignation, référence, casier, repère)…', value: filtre, autocomplete: 'off' });
         racine.appendChild(el('div', { class: 'st-actions' }, [champ,
           el('button', { class: 'btn-second', type: 'button', onclick: function () { imprimerQr(liste, (T.site ? T.site + ' — ' : '') + materiel); } }, ['🖨 QR codes']),
           el('button', { class: 'btn-second', type: 'button', onclick: ouvrirAjoutPiece }, ['+ Ajouter une pièce'])]));
@@ -586,7 +649,8 @@
           var f = norm(filtre);
           var vues = liste.filter(function (p) {
             if (choixModele === '(aucun)' ? !!p.modele : (choixModele && p.modele !== choixModele)) return false;
-            return !f || norm([p.designation, p.reference, p.casier, p.ancienneReference, p.modele].join(' ')).indexOf(f) >= 0;
+            if ((choixX === 'x' && !p.nonStocke) || (choixX === 'stock' && p.nonStocke)) return false;
+            return !f || norm([p.designation, p.reference, p.casier, p.ancienneReference, p.modele, p.reperes, p.substitution].join(' ')).indexOf(f) >= 0;
           });
           if (!vues.length) {
             var mm = (T && T.materiels || []).filter(function (x) { return x.nom === materiel; })[0];
@@ -633,12 +697,12 @@
           badgeCommun(p),
           p.stockBas ? el('span', { class: 'st-badge st-alerte' }, ['Stock bas']) : null,
           p.enAttente ? el('span', { class: 'st-badge st-envoi' }, ['à envoyer']) : null];
-        var cellQte = el('td', {}, [el('button', { class: 'st-qte', type: 'button', title: 'Modifier la quantité', onclick: function () { ouvrirQuantite(p); } }, [String(p.quantiteStock)]),
+        var cellQte = el('td', {}, [el('button', { class: 'st-qte' + (p.nonStocke ? ' st-qte-x' : ''), type: 'button', title: p.nonStocke ? 'Pas encore suivie en stock : toucher pour la mettre en stock' : 'Modifier la quantité', onclick: function () { ouvrirQuantite(p); } }, [qteTexte(p)]),
           p.quantiteACommander > 0 ? el('div', { class: 'st-acommander' }, ['à commander : ' + p.quantiteACommander]) : null]);
         var actions = el('td', { class: 'pp-actions' }, [
           el('button', { class: 'pp-icone', type: 'button', title: 'Ajouter au panier', onclick: function () { ouvrirPanier(p); } }, ['🛒']),
           el('button', { class: 'pp-icone', type: 'button', title: 'Détails', onclick: function () { ouvrirFiche(p); } }, ['ℹ️'])]);
-        var classe = (p.stockBas ? 'st-bas' : '') + (p.enAttente ? ' attente' : '');
+        var classe = (p.stockBas ? 'st-bas' : '') + (p.enAttente ? ' attente' : '') + (p.nonStocke ? ' st-nonstocke' : '');
         if (avecMateriel) {
           return el('tr', { class: classe }, [
             el('td', {}, [el('span', {}, [p.designation]), badgeModele(p), badges[0], badges[1], badges[2],
@@ -874,7 +938,7 @@
         var champs = [];
         var lignes = liste.map(function (p) {
           var k = p.materiel + '|' + cle(p);
-          var inp = el('input', { type: 'text', inputmode: 'numeric', class: 'st-compte', placeholder: String(p.quantiteStock), autocomplete: 'off', 'aria-label': 'Quantité comptée' });
+          var inp = el('input', { type: 'text', inputmode: 'numeric', class: 'st-compte', placeholder: qteTexte(p), autocomplete: 'off', 'aria-label': 'Quantité comptée' });
           var ecart = el('span', { class: 'st-ecart' });
           var ok = el('button', { class: 'btn-second st-ok', type: 'button', title: 'Valider ce comptage' }, ['✓']);
           function majEcart() {
@@ -902,7 +966,7 @@
           champs.valider.push(function () { return inp.value.trim() !== '' && invFaits[k] === undefined ? valider() : false; });
           return el('tr', { class: invFaits[k] !== undefined ? 'st-fait' : '' }, [
             el('td', {}, [p.designation, el('div', { class: 'st-sous' }, [(p.reference || 'sans réf.') + ' · ' + (invPortee.type === 'casier' ? p.materiel : (p.casier ? rangementTexte(p.casier) : 'sans rangement'))])]),
-            el('td', {}, [String(p.quantiteStock)]),
+            el('td', {}, [qteTexte(p)]),
             el('td', {}, invFaits[k] !== undefined ? [el('b', { class: 'st-plus' }, ['✓ ' + invFaits[k]])] : [inp, ecart]),
             el('td', {}, invFaits[k] !== undefined ? [] : [ok])]);
         });
@@ -1140,8 +1204,8 @@
           var p = piece();
           corps.innerHTML = '';
           corps.appendChild(el('div', { class: 'st-fiche-qte' }, [
-            el('button', { class: 'st-qte st-qte-grand', type: 'button', onclick: function () { ouvrirQuantite(p); } }, [String(p.quantiteStock)]),
-            el('span', { class: 'petit' }, ['en stock — touche pour modifier'])]));
+            el('button', { class: 'st-qte st-qte-grand' + (p.nonStocke ? ' st-qte-x' : ''), type: 'button', onclick: function () { ouvrirQuantite(p); } }, [qteTexte(p)]),
+            el('span', { class: 'petit' }, [p.nonStocke ? 'pas encore suivie en stock (pièce de la liste constructeur) — touche pour la mettre en stock' : 'en stock — touche pour modifier'])]));
           var dl = el('dl', { class: 'st-details' });
           [].concat(
             ligne('Désignation', p.designation, function () { editerTexte(p, 'Désignation', 'designation', 'stock.designation', true); }),
@@ -1214,6 +1278,7 @@
       /* ---------- modifications ---------- */
       // depuisScan : ouvert par un QR code -> « Retirer 1 » prêt à valider + accès à la fiche
       function ouvrirQuantite(p, depuisScan) {
+        if (p.nonStocke) { ouvrirMiseEnStock(p); return; }
         var sens = -1, motif = MOTIFS_SORTIE[0];
         var inp = el('input', { type: 'text', inputmode: 'numeric', value: '1', autocomplete: 'off' });
         var bR = el('button', { class: 'st-sens actif', type: 'button' }, ['− Retirer']);

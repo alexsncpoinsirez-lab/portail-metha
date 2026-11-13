@@ -1458,3 +1458,20 @@ body.futur .assistant .as-envoyer { background: var(--neon); color: #04121c; bor
 .st-qte { width: 58px; min-height: 34px; padding: 0 6px; text-align: center; font-weight: 700; font-size: 16px; border: 1px solid var(--bord); border-radius: 8px; background: var(--surface); color: var(--texte); }
 .st-qte:focus { outline: 2px solid var(--accent); }
 .st-qte-err { border-color: #c62828; }
+
+/* v80 — Pompes Wangen : fiche machine, pièces « x » (liste constructeur, pas encore suivies en stock) en bleu */
+:root { --bleu-x: #1155cc; }
+@media (prefers-color-scheme: dark) { :root { --bleu-x: #7fb0ff; } }
+body.futur { --bleu-x: #7fb0ff; }
+.st-table tr.st-nonstocke td, tr.st-nonstocke td { color: var(--bleu-x); }
+tr.st-nonstocke .st-sous { color: color-mix(in srgb, var(--bleu-x) 75%, var(--texte-2)); }
+.st-qte.st-qte-x { color: var(--bleu-x); border-style: dashed; border-color: var(--bleu-x); }
+.st-x-txt { color: var(--bleu-x); }
+.st-chip.st-chip-x { color: var(--bleu-x); }
+.st-machine { border: 1px solid var(--bord); border-left: 5px solid var(--accent); border-radius: 12px; background: var(--surface); padding: 10px 12px; margin: 0 0 12px; display: grid; gap: 4px; }
+.st-machine-titre { font-weight: 800; font-size: 16px; }
+.st-machine-l { font-size: 14px; display: grid; grid-template-columns: 96px 1fr; gap: 6px; align-items: baseline; }
+.st-machine-l.petit { display: block; }
+.st-machine-lib { display: inline-block; min-width: 92px; color: var(--texte-2); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.st-carte-machine-info { font-size: 12px; color: var(--texte-2); margin: -2px 0 4px; font-variant-numeric: tabular-nums; }
+.st-carte-machine { border-left: 4px solid var(--accent); }
