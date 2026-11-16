@@ -27,6 +27,11 @@
     var d = new Date(iso.length <= 10 ? iso + 'T00:00:00' : iso);
     return isNaN(d) ? iso : d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
   }
+  function fmtCourt(iso) {
+    var j = jourIso(iso);
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(j || '');
+    return m ? m[3] + '/' + m[2] : fmtDate(iso);
+  }
   // Serveur ancien ou feuille modifiée à la main : exécutants « a|b » → liste ; date (Date / ISO) → AAAA-MM-JJ
   // (sinon le champ Échéance s'affichait vide et une modification effaçait l'échéance)
   function listeNoms(a) {
@@ -373,7 +378,8 @@
           el('div', { class: 'tp-titre' }, [t.title + (t.enAttente ? ' ⏳' : '')]),
           t.description ? el('div', { class: 'tp-desc' }, [t.description]) : null,
           el('div', { class: 'tp-pied' }, [
-            e ? el('span', { class: 'tp-due ' + e.cls }, [(e.cls === 'retard' ? '⚠ ' : '') + e.texte]) : null,
+            t.requestedAt ? el('span', { class: 'tp-demande', title: 'Date de la demande' }, ['Demandé ' + fmtCourt(t.requestedAt)]) : null,
+            e ? el('span', { class: 'tp-due ' + e.cls, title: 'Échéance' }, [(e.cls === 'retard' ? '⚠ ' : '→ ') + e.texte]) : null,
             nb ? el('span', { class: 'tp-badge' }, ['📷 ' + nb]) : null,
             t.requester ? el('span', { class: 'tp-badge', title: 'Demandé par ' + t.requester }, ['← ' + initiales(t.requester)]) : null,
             el('span', { class: 'tp-espace' }),
@@ -472,16 +478,27 @@
         if (nouvelle) setTimeout(function () { titre.focus(); }, 30);
       }
 
+      // Choix : appareil photo ou galerie (sur téléphone, « capture » ouvre directement la caméra, d'où ce choix)
       function choisirPhoto(t, apres) {
-        var f = el('input', { type: 'file', accept: 'image/*', capture: 'environment', style: 'position:fixed;left:-9999px;top:0;opacity:0' });
+        var fermer = modale('Ajouter une photo', 'D’où vient la photo ?', [
+          el('button', { type: 'button', class: 'btn-principal st-large', onclick: function () { fermer(); ouvrirSelecteur(t, apres, true); } }, ['📷 Prendre une photo']),
+          el('button', { type: 'button', class: 'btn-second st-large', style: 'margin-top:8px', onclick: function () { fermer(); ouvrirSelecteur(t, apres, false); } }, ['🖼 Choisir dans la galerie'])
+        ]);
+      }
+      function ouvrirSelecteur(t, apres, camera) {
+        var attrs = { type: 'file', accept: 'image/*', style: 'position:fixed;left:-9999px;top:0;opacity:0' };
+        if (camera) attrs.capture = 'environment'; else attrs.multiple = 'multiple';
+        var f = el('input', attrs);
         document.body.appendChild(f);
         f.addEventListener('change', function () {
-          var fichier = f.files[0]; f.remove();
-          if (!fichier) return;
-          var p = redimensionner(fichier, 1600, 0.82);
-          (PM.attente ? PM.attente(p, 'Préparation de la photo…') : p).then(function (data) {
-            saisir({ type: 'photo.ajouter', photoId: PM.uid(), tacheId: t.id, photo: data.split(',')[1] || '', apercu: data, nomFichier: (fichier.name || 'photo.jpg').replace(/[^\w.\-]+/g, '_') }, true);
-            PM.toast('Photo enregistrée' + (navigator.onLine ? '' : ' · envoi au retour du réseau'));
+          var fichiers = Array.prototype.slice.call(f.files || []).slice(0, 8); f.remove();
+          if (!fichiers.length) return;
+          var p = Promise.all(fichiers.map(function (fichier) { return redimensionner(fichier, 1600, 0.82); }));
+          (PM.attente ? PM.attente(p, fichiers.length > 1 ? 'Préparation des photos…' : 'Préparation de la photo…') : p).then(function (datas) {
+            datas.forEach(function (data, i) {
+              saisir({ type: 'photo.ajouter', photoId: PM.uid(), tacheId: t.id, photo: data.split(',')[1] || '', apercu: data, nomFichier: (fichiers[i].name || 'photo.jpg').replace(/[^\w.\-]+/g, '_') }, true);
+            });
+            PM.toast((datas.length > 1 ? datas.length + ' photos enregistrées' : 'Photo enregistrée') + (navigator.onLine ? '' : ' · envoi au retour du réseau'));
             if (apres) apres();
           })['catch'](function () { PM.toast('Impossible de lire cette photo.'); });
         });
