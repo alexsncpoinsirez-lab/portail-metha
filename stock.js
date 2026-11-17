@@ -687,6 +687,43 @@
         var autres = p.communAvec || [];
         return el('span', { class: 'st-badge st-partage', title: texteCommun(p) }, ['🔗 ' + (autres.length ? 'Commune' : 'Partagée')]);
       }
+      /* Panier / commandé de cette pièce : sur CE site (avec les saisies pas encore envoyées) et sur les AUTRES sites.
+         Même pièce = même référence (tous matériels) ; sans référence : même désignation (+ même matériel sur ce site). */
+      var idxCmd = null, idxCmdT = 0;
+      function indexCommandes() {
+        if (idxCmd && Date.now() - idxCmdT < 400) return idxCmd;
+        var ici = {}, autres = {};
+        function cles(x, avecMat) {
+          var r = String(x.reference === null || x.reference === undefined ? '' : x.reference).trim();
+          return r ? ['r:' + refNorm(r)] : ['d:' + (avecMat ? x.materiel + '|' : '') + String(x.designation || '').trim().toLowerCase()];
+        }
+        function ajouter(m, k, site, x) {
+          var e = m[k] || (m[k] = {});
+          var s2 = e[site] || (e[site] = { site: site, panier: 0, commande: 0 });
+          if (x.statut === 'Commandé') s2.commande += Number(x.quantite) || 0; else s2.panier += Number(x.quantite) || 0;
+        }
+        lignesCmd().forEach(function (x) { cles(x, true).forEach(function (k) { ajouter(ici, k, '', x); }); });
+        ((T && T.commandesAutres) || []).forEach(function (x) { cles(x, false).forEach(function (k) { ajouter(autres, k, x.site || x.siteId, x); }); });
+        idxCmd = { ici: ici, autres: autres }; idxCmdT = Date.now();
+        return idxCmd;
+      }
+      function badgesCommande(p) {
+        var I = indexCommandes(), r = String(p.reference || '').trim(), out = [];
+        var ici = r ? I.ici['r:' + refNorm(r)] : I.ici['d:' + p.materiel + '|' + String(p.designation || '').trim().toLowerCase()];
+        var aut = I.autres[r ? 'r:' + refNorm(r) : 'd:' + String(p.designation || '').trim().toLowerCase()];
+        if (ici && ici['']) {
+          var e = ici[''];
+          if (e.panier > 0) out.push(el('span', { class: 'st-badge st-cmd-ici', title: 'Dans le panier de ce site : ' + e.panier }, ['🛒 ' + e.panier]));
+          if (e.commande > 0) out.push(el('span', { class: 'st-badge st-cmd-ici', title: 'Commandé sur ce site, en attente de réception : ' + e.commande }, ['📦 ' + e.commande + ' cmd']));
+        }
+        if (aut) Object.keys(aut).forEach(function (site) {
+          var e = aut[site], t = [];
+          if (e.panier > 0) t.push('🛒 ' + e.panier);
+          if (e.commande > 0) t.push('📦 ' + e.commande + ' cmd');
+          if (t.length) out.push(el('span', { class: 'st-badge st-cmd-autre', title: site + ' : ' + (e.panier > 0 ? e.panier + ' au panier' : '') + (e.panier > 0 && e.commande > 0 ? ', ' : '') + (e.commande > 0 ? e.commande + ' commandé' : '') }, [site + ' : ' + t.join(' · ')]));
+        });
+        return out;
+      }
       // avecMateriel : vue recherche / casier (la 2e colonne montre le matériel)
       function lignePiece(p, avecMateriel) {
         var sous = [];
@@ -705,13 +742,13 @@
         var classe = (p.stockBas ? 'st-bas' : '') + (p.enAttente ? ' attente' : '') + (p.nonStocke ? ' st-nonstocke' : '');
         if (avecMateriel) {
           return el('tr', { class: classe }, [
-            el('td', {}, [el('span', {}, [p.designation]), badgeModele(p), badges[0], badges[1], badges[2],
-              el('div', { class: 'st-sous' }, [(p.reference ? 'Réf. ' + p.reference : 'sans référence') + (p.casier ? ' · ' + rangementTexte(p.casier) : '')])]),
+            el('td', {}, [el('span', {}, [p.designation]), badgeModele(p), badges[0], badges[1], badges[2]].concat(badgesCommande(p)).concat([
+              el('div', { class: 'st-sous' }, [(p.reference ? 'Réf. ' + p.reference : 'sans référence') + (p.casier ? ' · ' + rangementTexte(p.casier) : '')])])),
             el('td', {}, [p.materiel]), cellQte, actions]);
         }
         return el('tr', { class: classe }, [
           el('td', { class: 'st-ref' }, [p.reference || '—', urlPhoto(p.photo) ? el('button', { class: 'pp-icone', type: 'button', title: 'Voir la photo', onclick: function () { pleinEcran(liensPhotos(p.photo), 0); } }, ['📷']) : null]),
-          el('td', {}, [el('span', {}, [p.designation]), badges[0], badges[1], badges[2], sous.length ? el('div', { class: 'st-sous' }, [sous.join(' · ')]) : null]),
+          el('td', {}, [el('span', {}, [p.designation]), badges[0], badges[1], badges[2]].concat(badgesCommande(p)).concat([sous.length ? el('div', { class: 'st-sous' }, [sous.join(' · ')]) : null])),
           el('td', {}, [p.casier ? rangementTexte(p.casier) : '']), cellQte, actions]);
       }
 
@@ -1589,13 +1626,13 @@
         function ligneCommandee(it) {
           // Quantité reçue modifiable directement dans la ligne (touche le nombre), puis « Reçu » ajoute ce nombre au stock.
           var k = cleCmd(it), cmdQ = it.quantite || 1;
-          var inp = el('input', { class: 'st-qte', type: 'text', inputmode: 'numeric', 'aria-label': 'Quantité reçue', value: String(qteRecue[k] != null ? qteRecue[k] : cmdQ) });
+          var inp = el('input', { class: 'st-qte-recue', type: 'text', inputmode: 'numeric', 'aria-label': 'Quantité reçue', value: String(qteRecue[k] != null ? qteRecue[k] : cmdQ) });
           var note = el('div', { class: 'st-sous' }, []);
           function maj() {
             var n = entier(inp.value, 1);
             if (!isNaN(n) && n !== cmdQ) { qteRecue[k] = n; note.textContent = 'commandé : ' + cmdQ; }
             else { if (!isNaN(n)) delete qteRecue[k]; note.textContent = ''; }
-            inp.classList.toggle('st-qte-err', isNaN(n));
+            inp.classList.toggle('st-qte-recue-err', isNaN(n));
           }
           inp.addEventListener('focus', function () { inp.select(); });
           inp.addEventListener('input', maj);
