@@ -19,7 +19,7 @@
   var OUTIL_DU_SITE = { site1: 'stock-rotte', site2: 'stock-arr' }; // site1/site2 = ordre de l'onglet Sites du hub
   var MOTIFS_SORTIE = ['Intervention', 'Correction', 'Autre'];
   var MOTIFS_ENTREE = ['Réception commande', 'Retour de pièce', 'Correction', 'Autre'];
-  var TYPES_PIECE = ['stock.quantite', 'stock.reception', 'stock.seuil', 'stock.modele', 'stock.casier', 'stock.designation', 'stock.reference', 'stock.photo', 'stock.retirerPhoto'];
+  var TYPES_PIECE = ['stock.quantite', 'stock.reception', 'stock.seuil', 'stock.substitution', 'stock.modele', 'stock.casier', 'stock.designation', 'stock.reference', 'stock.photo', 'stock.retirerPhoto'];
 
   /* ---------- outils ---------- */
   function cle(p) { return String(p.reference || '').trim() || String(p.designation || '').trim(); }
@@ -32,6 +32,12 @@
   // Commandes : référence « 00123 » = 123 (Sheets a pu la transformer en nombre) ; sans référence : matériel + désignation
   // Quantité affichée : « x » pour une pièce de la liste constructeur pas encore suivie en stock (écrite en bleu)
   function qteTexte(p) { return p.nonStocke ? 'x' : String(p.quantiteStock); }
+  /* Références de remplacement (colonne Substitution) : séparées par « ; », retour à la ligne, « ou » ou « / » entouré d'espaces */
+  function refsRemplacement(p) {
+    var vu = {}, principale = refNorm(p && p.reference);
+    return String((p && p.substitution) || '').split(/\s*(?:;|\n|\s\/\s|\sou\s)\s*/i).map(function (x) { return x.trim().replace(/,/g, '.'); })
+      .filter(function (x) { var k = refNorm(x); if (!x || k === principale || vu[k]) return false; vu[k] = 1; return true; });
+  }
   function refNorm(r) { r = String(r === null || r === undefined ? '' : r).trim(); return /^\d+$/.test(r) ? (r.replace(/^0+/, '') || '0') : r; }
   function cleCmd(x) { return x.materiel + '|' + (String(x.reference || '').trim() ? 'r:' + refNorm(x.reference) : 'd:' + String(x.designation || '').trim()); }
   var TYPES_CMD = ['stock.panier', 'stock.retirerPanier', 'stock.commande', 'stock.reception'];
@@ -189,6 +195,7 @@
       else if (a.type === 'stock.casier') cible.casier = a.casier;
       else if (a.type === 'stock.modele') cible.modele = a.nouvelle;
       else if (a.type === 'stock.designation') cible.designation = a.nouvelle;
+      else if (a.type === 'stock.substitution') cible.substitution = a.nouvelle;
       else if (a.type === 'stock.reference') { cible.reference = a.nouvelle; cible.partage = false; }
       else if (a.type === 'stock.photo') cible.photo = (a.ajout ? liensPhotos(cible.photo) : []).concat([a.photo]).join('\n');
       else if (a.type === 'stock.retirerPhoto') cible.photo = a.lien ? liensPhotos(cible.photo).filter(function (x) { return x !== a.lien; }).join('\n') : '';
@@ -707,10 +714,26 @@
         idxCmd = { ici: ici, autres: autres }; idxCmdT = Date.now();
         return idxCmd;
       }
+      function fusion(liste) { // regroupe les lignes trouvées sous plusieurs références (principale + remplacement)
+        var m = null;
+        liste.forEach(function (e) { if (!e) return; m = m || {}; Object.keys(e).forEach(function (site) {
+          var d = m[site] || (m[site] = { site: site, panier: 0, commande: 0 }); d.panier += e[site].panier; d.commande += e[site].commande; }); });
+        return m;
+      }
+      function badgeRemplacement(p) {
+        var alt = refsRemplacement(p);
+        if (!alt.length) return null;
+        var toutes = [p.reference || '(sans réf.)'].concat(alt);
+        return el('span', { class: 'st-badge st-subst', title: 'Références équivalentes : ' + toutes.join(' · '), onclick: function (e) {
+          e.stopPropagation(); PM.toast('🔁 Même pièce : ' + toutes.join(' · '), 6000);
+        } }, ['🔁 ' + toutes.length + ' réf.']);
+      }
       function badgesCommande(p) {
         var I = indexCommandes(), r = String(p.reference || '').trim(), out = [];
-        var ici = r ? I.ici['r:' + refNorm(r)] : I.ici['d:' + p.materiel + '|' + String(p.designation || '').trim().toLowerCase()];
-        var aut = I.autres[r ? 'r:' + refNorm(r) : 'd:' + String(p.designation || '').trim().toLowerCase()];
+        var refs = r ? [r].concat(refsRemplacement(p)) : refsRemplacement(p);
+        var ici = fusion(refs.map(function (x) { return I.ici['r:' + refNorm(x)]; }).concat(r ? [] : [I.ici['d:' + p.materiel + '|' + String(p.designation || '').trim().toLowerCase()]]));
+        var aut = fusion(refs.map(function (x) { return I.autres['r:' + refNorm(x)]; }).concat(r ? [] : [I.autres['d:' + String(p.designation || '').trim().toLowerCase()]]));
+        if (badgeRemplacement(p)) out.push(badgeRemplacement(p));
         if (ici && ici['']) {
           var e = ici[''];
           if (e.panier > 0) out.push(el('span', { class: 'st-badge st-cmd-ici', title: 'Dans le panier de ce site : ' + e.panier }, ['🛒 ' + e.panier]));
@@ -729,7 +752,7 @@
         var sous = [];
         if (p.cotes) sous.push(p.cotes);
         if (p.reperes) sous.push('rep. ' + p.reperes);
-        if (p.substitution) sous.push('subst. ' + p.substitution);
+        if (refsRemplacement(p).length) sous.push('ou réf. ' + refsRemplacement(p).join(', '));
         var badges = [
           badgeCommun(p),
           p.stockBas ? el('span', { class: 'st-badge st-alerte' }, ['Stock bas']) : null,
@@ -743,7 +766,7 @@
         if (avecMateriel) {
           return el('tr', { class: classe }, [
             el('td', {}, [el('span', {}, [p.designation]), badgeModele(p), badges[0], badges[1], badges[2]].concat(badgesCommande(p)).concat([
-              el('div', { class: 'st-sous' }, [(p.reference ? 'Réf. ' + p.reference : 'sans référence') + (p.casier ? ' · ' + rangementTexte(p.casier) : '')])])),
+              el('div', { class: 'st-sous' }, [(p.reference ? 'Réf. ' + p.reference : 'sans référence') + (refsRemplacement(p).length ? ' (ou ' + refsRemplacement(p).join(', ') + ')' : '') + (p.casier ? ' · ' + rangementTexte(p.casier) : '')])])),
             el('td', {}, [p.materiel]), cellQte, actions]);
         }
         return el('tr', { class: classe }, [
@@ -1253,7 +1276,7 @@
             ligne('Référence', p.reference, function () { editerTexte(p, 'Référence', 'reference', 'stock.reference', false); }),
             p.partage ? ligne('🔗 Stock commun', (p.communAvec || []).length ? 'avec ' + p.communAvec.join(' et ') + ' — même quantité, même seuil' : 'présente plusieurs fois sur ce site') : [],
             p.ancienneReference ? ligne('Ancienne réf.', p.ancienneReference) : [],
-            p.cotes ? ligne('Côtes', p.cotes) : [], p.substitution ? ligne('Substitution', p.substitution) : [], p.reperes ? ligne('Repères', p.reperes) : []
+            p.cotes ? ligne('Côtes', p.cotes) : [], ligne('🔁 Réf. de remplacement', refsRemplacement(p).join(' · '), function () { editerTexte(p, 'Réf. de remplacement', 'substitution', 'stock.substitution', false); }), p.reperes ? ligne('Repères', p.reperes) : []
           ).forEach(function (n) { dl.appendChild(n); });
           corps.appendChild(dl);
           var liens = liensPhotos(p.photo);
@@ -1351,11 +1374,13 @@
       }
       function editerTexte(p, lib, champ, type, obligatoire) {
         var inp = el('input', { type: 'text', value: p[champ] || '', autocomplete: 'off' });
-        var note = type === 'stock.reference' ? 'Si cette référence existe déjà ailleurs (autre site ou matériel), la pièce rejoint aussitôt le stock déjà partagé. Si tu la vides, elle redevient propre à cette ligne.' : '';
+        var note = type === 'stock.substitution' ? 'Autres références de la MÊME pièce (même stock). Sépare-les par « ; ». Ex : 12345 ; AB-678' : type === 'stock.reference' ? 'Si cette référence existe déjà ailleurs (autre site ou matériel), la pièce rejoint aussitôt le stock déjà partagé. Si tu la vides, elle redevient propre à cette ligne.' : '';
         var fermer = modale('Modifier : ' + lib.toLowerCase(), note, [el('div', { class: 'champ' }, [el('label', {}, [lib]), inp]),
           el('button', { class: 'btn-principal', type: 'button', onclick: function () {
             var v = inp.value.trim();
             if (type === 'stock.reference') v = v.replace(/,/g, '.'); // virgules -> points (choix d'Alex)
+            if (type === 'stock.substitution') v = refsRemplacement({ reference: p.reference, substitution: v }).join('; ');
+            if (type === 'stock.substitution' && v === refsRemplacement(p).join('; ')) { fermer(); return; }
             if (obligatoire && !v) { inp.focus(); return; }
             if (v === (p[champ] || '')) { fermer(); return; }
             if (!confirm('Changer « ' + (p[champ] || 'non renseigné') + ' » en « ' + (v || 'non renseigné') + ' » ?')) return;
@@ -1794,7 +1819,10 @@
           PM.Prefs.set('stock_dernier_fournisseur', f);
           btn.disabled = true; btn.textContent = 'Création du PDF…';
           chargerJsPdf().then(function (JsPDF) {
-            fabriquerPdf(JsPDF, { titre: 'BON DE COMMANDE', lignes: panier, numero: numero, fournisseur: f, demandeur: agent, remarques: rem.value.trim(), signatures: true,
+            fabriquerPdf(JsPDF, { titre: 'BON DE COMMANDE', lignes: panier.map(function (it) {
+              var k = cleCmd(it), pc = toutesPieces().filter(function (x) { return x.materiel === it.materiel && cleCmd(x) === k; })[0], alt = pc ? refsRemplacement(pc) : [];
+              return alt.length ? Object.assign({}, it, { designation: (it.designation || '') + ' (ou réf. ' + alt.join(', ') + ')' }) : it;
+            }), numero: numero, fournisseur: f, demandeur: agent, remarques: rem.value.trim(), signatures: true,
               fichier: 'bon-de-commande-' + d.toISOString().slice(0, 10) + '.pdf' });
             fermer();
             if (coche.checked) {

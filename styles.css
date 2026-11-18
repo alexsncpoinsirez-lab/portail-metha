@@ -1490,3 +1490,7 @@ tr.st-nonstocke .st-sous { color: color-mix(in srgb, var(--bleu-x) 75%, var(--te
 .st-cmd-ici { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
 .st-cmd-autre { background: color-mix(in srgb, #8e44ad 16%, transparent); color: #7d3c98; }
 body.futur .st-cmd-autre { color: #d7a6f0; }
+
+/* Pièce avec références de remplacement */
+.st-subst { background: color-mix(in srgb, #e67e22 18%, transparent); color: #b35900; cursor: pointer; }
+body.futur .st-subst { color: #ffb870; }
