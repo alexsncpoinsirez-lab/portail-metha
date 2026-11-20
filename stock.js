@@ -243,6 +243,20 @@
       // Une saisie confirmée APRÈS ce moment reste appliquée par-dessus (cmdConfirmes) : une lecture un peu
       // ancienne ne peut plus faire disparaître une pièce qu'on vient d'ajouter au panier.
       var cmdServeur = null, cmdLu = 0, cmdConfirmes = [];
+      // Quantités des AUTRES sites (pièces « séparées par site ») : { réf normalisée: [{ site, quantite }] }
+      var autresQ = null;
+      PM.DB.get('stock_autresq_' + S).then(function (x) { if (!autresQ && x) autresQ = x; });
+      function chargerAutresQ() {
+        if (modeDemo) return;
+        api('stock.autresQuantites', {}, 90000).then(function (j) {
+          var m = {};
+          Object.keys(j.quantites || {}).forEach(function (k) { m[refNorm(String(k).replace(/,/g, '.'))] = j.quantites[k]; });
+          autresQ = m; PM.DB.set('stock_autresq_' + S, m);
+          if (actif() && !document.querySelector('.ag-modale') && (ecran === 'pieces' || ecran === 'recherche' || ecran === 'casiers')) afficher();
+        })['catch'](function () { /* pas grave : dernière version connue gardée */ });
+      }
+      function estSeparee(p) { return !!(p && p.reference && p.commun === false && !p.nonStocke); }
+      function qteAutresSites(p) { return estSeparee(p) && autresQ ? (autresQ[refNorm(String(p.reference).trim().replace(/,/g, '.'))] || []) : []; }
       var ecran = 'materiels', materiel = null, filtre = '', recherche = '';
       var casierChoisi = null, invPortee = null, invFaits = {}, photoMode = 'avec', photoFiltre = '';
       var params = ctx.params || [];
@@ -300,6 +314,7 @@
           });
           if (garde) PM.toast('Une partie du stock n’a pas pu être relue : dernière version gardée.', 4000);
           T = j; PM.DB.set(K.tout, j);
+          chargerAutresQ();
           if (Array.isArray(j.commandes)) { cmdServeur = j.commandes; cmdLu = depart; PM.DB.set('stock_commander_' + S, cmdServeur); }
           return nettoyerAttente().then(function () {
             if (actif() && !document.querySelector('.ag-modale')) afficher();
@@ -733,6 +748,7 @@
         var refs = r ? [r].concat(refsRemplacement(p)) : refsRemplacement(p);
         var ici = fusion(refs.map(function (x) { return I.ici['r:' + refNorm(x)]; }).concat(r ? [] : [I.ici['d:' + p.materiel + '|' + String(p.designation || '').trim().toLowerCase()]]));
         var aut = fusion(refs.map(function (x) { return I.autres['r:' + refNorm(x)]; }).concat(r ? [] : [I.autres['d:' + String(p.designation || '').trim().toLowerCase()]]));
+        if (estSeparee(p)) out.push(el('span', { class: 'st-badge st-separe', title: 'Stock séparé : chaque site a son propre nombre' }, ['📍 Par site']));
         if (badgeRemplacement(p)) out.push(badgeRemplacement(p));
         if (ici && ici['']) {
           var e = ici[''];
@@ -758,7 +774,8 @@
           p.stockBas ? el('span', { class: 'st-badge st-alerte' }, ['Stock bas']) : null,
           p.enAttente ? el('span', { class: 'st-badge st-envoi' }, ['à envoyer']) : null];
         var cellQte = el('td', {}, [el('button', { class: 'st-qte' + (p.nonStocke ? ' st-qte-x' : ''), type: 'button', title: p.nonStocke ? 'Pas encore suivie en stock : toucher pour la mettre en stock' : 'Modifier la quantité', onclick: function () { ouvrirQuantite(p); } }, [qteTexte(p)]),
-          p.quantiteACommander > 0 ? el('div', { class: 'st-acommander' }, ['à commander : ' + p.quantiteACommander]) : null]);
+          p.quantiteACommander > 0 ? el('div', { class: 'st-acommander' }, ['à commander : ' + p.quantiteACommander]) : null]
+          .concat(qteAutresSites(p).map(function (a) { return el('div', { class: 'st-autreq', title: 'Stock séparé : quantité sur ' + a.site }, [a.site + ' : ' + a.quantite]); })));
         var actions = el('td', { class: 'pp-actions' }, [
           el('button', { class: 'pp-icone', type: 'button', title: 'Ajouter au panier', onclick: function () { ouvrirPanier(p); } }, ['🛒']),
           el('button', { class: 'pp-icone', type: 'button', title: 'Détails', onclick: function () { ouvrirFiche(p); } }, ['ℹ️'])]);
@@ -1274,6 +1291,9 @@
             ligne('Seuil mini', p.seuil, function () { editerSeuil(p); }),
             ligne('À commander', p.quantiteACommander),
             ligne('Référence', p.reference, function () { editerTexte(p, 'Référence', 'reference', 'stock.reference', false); }),
+            (p.reference && !p.nonStocke) ? ligne('📍 Entre les sites', estSeparee(p)
+              ? 'Séparé — ici : ' + p.quantiteStock + qteAutresSites(p).map(function (a) { return ' · ' + a.site + ' : ' + a.quantite; }).join('')
+              : 'Une seule quantité commune', function () { ouvrirSeparation(p); }) : [],
             p.partage ? ligne('🔗 Stock commun', (p.communAvec || []).length ? 'avec ' + p.communAvec.join(' et ') + ' — même quantité, même seuil' : 'présente plusieurs fois sur ce site') : [],
             p.ancienneReference ? ligne('Ancienne réf.', p.ancienneReference) : [],
             p.cotes ? ligne('Côtes', p.cotes) : [], ligne('🔁 Réf. de remplacement', refsRemplacement(p).join(' · '), function () { editerTexte(p, 'Réf. de remplacement', 'substitution', 'stock.substitution', false); }), p.reperes ? ligne('Repères', p.reperes) : []
@@ -1387,6 +1407,41 @@
             fermer(); saisir(Object.assign({ type: type, nouvelle: v }, refPiece(p)));
           } }, ['Enregistrer'])]);
         setTimeout(function () { inp.focus(); inp.select(); }, 30);
+      }
+      /* Séparer / remettre en commun une référence entre les deux sites (en ligne seulement) */
+      function ouvrirSeparation(p) {
+        if (modeDemo) { PM.toast('Pas disponible en démonstration.'); return; }
+        var agent = PM.Prefs.get('agent', '');
+        if (!agent) { demanderAgent(function () { ouvrirSeparation(p); }); return; }
+        var msg = el('p', { class: 'bg-erreur', hidden: 'hidden' });
+        function envoyer(extra, btn, fermer) {
+          btn.disabled = true; btn.textContent = 'Enregistrement…';
+          api('stock.separer', Object.assign({ reference: p.reference, agent: agent }, extra), 120000).then(function () {
+            fermer(); PM.toast(extra.separe ? 'Stock séparé : chaque site a maintenant son propre nombre' : 'Stock remis en commun', 4000);
+            charger(false);
+          })['catch'](function (e) { btn.disabled = false; btn.textContent = 'Réessayer'; msg.textContent = (PM.raison ? PM.raison(e) : e.message); msg.hidden = false; });
+        }
+        if (!estSeparee(p)) {
+          var b1 = el('button', { class: 'btn-principal', type: 'button' }, ['📍 Séparer par site']);
+          var f1 = modale('Séparer le stock par site', (p.designation || '') + ' — réf. ' + p.reference, [
+            el('p', {}, ['Aujourd’hui cette référence a UNE quantité commune (' + p.quantiteStock + '), la même sur les deux sites.']),
+            el('p', {}, ['Après séparation, chaque site a son propre nombre : une sortie ici ne change plus l’autre site. Les deux sites partent de ' + p.quantiteStock + ' : fais ensuite un comptage sur chaque site pour mettre le vrai nombre.']),
+            el('p', { class: 'petit' }, ['Toutes les lignes de cette référence sont concernées (les deux sites, tous matériels). Le choix est réversible.']), msg, b1]);
+          b1.onclick = function () { envoyer({ separe: true }, b1, f1); };
+          return;
+        }
+        var autres = qteAutresSites(p), total = p.quantiteStock + autres.reduce(function (t, a) { return t + (Number(a.quantite) || 0); }, 0);
+        var inp = el('input', { type: 'text', inputmode: 'numeric', value: String(total) });
+        var b2 = el('button', { class: 'btn-principal', type: 'button' }, ['🔗 Remettre en commun']);
+        var f2 = modale('Remettre en commun', (p.designation || '') + ' — réf. ' + p.reference, [
+          el('p', {}, ['Ici : ' + p.quantiteStock + autres.map(function (a) { return ' · ' + a.site + ' : ' + a.quantite; }).join('') + (autresQ ? '' : ' (quantité de l’autre site pas encore connue)')]),
+          el('div', { class: 'champ' }, [el('label', {}, ['Quantité commune (les deux sites)']), inp]),
+          el('p', { class: 'petit' }, ['Proposé : le total des deux sites. Cette quantité sera recopiée sur toutes les lignes ; l’historique le note.']), msg, b2]);
+        b2.onclick = function () {
+          var n = entier(inp.value, 0);
+          if (isNaN(n)) { msg.textContent = 'Quantité : nombre entier (0 ou plus).'; msg.hidden = false; return; }
+          envoyer({ separe: false, quantite: n }, b2, f2);
+        };
       }
       function editerSeuil(p) {
         var inp = el('input', { type: 'text', inputmode: 'numeric', value: String(p.seuil || 0), autocomplete: 'off' });

@@ -1513,3 +1513,9 @@ body.futur .eau-principal-val { color: var(--neon); text-shadow: 0 0 14px color-
 body.futur .eau-barre-ligne.dernier .eau-barre { box-shadow: 0 0 10px var(--neon); }
 .eau-barre-val { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
 .eau .nh3-btn-suppr.arme, .eau .btn-principal.arme { background: var(--alerte, #e5484d); border-color: var(--alerte, #e5484d); color: #fff; }
+
+/* Stock séparé par site */
+.st-separe { background: color-mix(in srgb, #16a085 18%, transparent); color: #0e7563; }
+body.futur .st-separe { color: #6fe3cb; }
+.st-autreq { font-size: 11px; font-weight: 700; color: #7d3c98; margin-top: 3px; white-space: nowrap; }
+body.futur .st-autreq { color: #d7a6f0; }
